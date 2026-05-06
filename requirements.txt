@@ -12,6 +12,7 @@ anthropic==0.41.0
 pydantic==2.10.3
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
+pyyaml==6.0.2
 
 # Agentic frameworks
 langchain==0.3.9
