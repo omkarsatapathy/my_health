@@ -1,10 +1,27 @@
+import anthropic
 from openai import AsyncOpenAI
 
-from app.config import llm_config, prompt_templates, settings
+from app.config import llm_config, llm_provider, prompt_templates, settings
 from app.models.chat import ChatMessage
 
-_client = AsyncOpenAI(api_key=settings.openai_api_key)
 _system_prompt: str = prompt_templates["system_prompt"].strip()
+
+_openai_client: AsyncOpenAI | None = None
+_anthropic_client: anthropic.AsyncAnthropic | None = None
+
+
+def _get_openai_client() -> AsyncOpenAI:
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+    return _openai_client
+
+
+def _get_anthropic_client() -> anthropic.AsyncAnthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return _anthropic_client
 
 
 def _build_openai_messages(history: list[ChatMessage], current: ChatMessage) -> list[dict]:
@@ -32,16 +49,69 @@ def _build_openai_messages(history: list[ChatMessage], current: ChatMessage) -> 
     return messages
 
 
-async def call_chat_llm(history: list[ChatMessage], current: ChatMessage) -> str:
-    model = settings.openai_vision_model if current.image else settings.openai_chat_model
+def _build_anthropic_messages(history: list[ChatMessage], current: ChatMessage) -> list[dict]:
+    messages: list[dict] = []
+
+    for msg in history:
+        messages.append({"role": msg.role, "content": msg.content})
+
+    if current.image:
+        messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": current.image.mediaType,
+                        "data": current.image.data,
+                    },
+                },
+                {"type": "text", "text": current.content},
+            ],
+        })
+    else:
+        messages.append({"role": "user", "content": current.content})
+
+    return messages
+
+
+async def _call_openai(history: list[ChatMessage], current: ChatMessage) -> str:
+    print('Using OpenAI client')
+    model = settings.vision_model if current.image else settings.chat_model
     messages = _build_openai_messages(history, current)
 
-    response = await _client.chat.completions.create(
+    response = await _get_openai_client().chat.completions.create(
         model=model,
         messages=messages,
         max_completion_tokens=llm_config["max_tokens"],
         temperature=llm_config["temperature"],
     )
-
-    print("LLM Response:", response.choices[0].message.content)
+    print('OpenAI response:', response.choices[0].message.content)
     return response.choices[0].message.content
+
+
+async def _call_anthropic(history: list[ChatMessage], current: ChatMessage) -> str:
+    print('Using anthropic client')
+    model = settings.vision_model if current.image else settings.chat_model
+    messages = _build_anthropic_messages(history, current)
+
+    response = await _get_anthropic_client().messages.create(
+        model=model,
+        system=_system_prompt,
+        messages=messages,
+        max_tokens=llm_config["max_tokens"],
+        temperature=llm_config["temperature"],
+    )
+    print('Anthropic response:', response)
+    return response.content[0].text
+
+
+async def call_chat_llm(history: list[ChatMessage], current: ChatMessage) -> str:
+    if llm_provider == "anthropic":
+        result = await _call_anthropic(history, current)
+    else:
+        result = await _call_openai(history, current)
+
+    print(f"[{llm_provider}] LLM Response:", result)
+    return result

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,13 +21,23 @@ api_config: dict = _cfg["api"]
 llm_config: dict = _cfg["llm"]
 prompt_templates: dict = _prompts
 
+LLMProvider = Literal["openai", "anthropic"]
+llm_provider: LLMProvider = llm_config["provider"]
+
 
 class Settings(BaseSettings):
-    openai_api_key: str
-    openai_chat_model: str = llm_config["chat_model"]
-    openai_vision_model: str = llm_config["vision_model"]
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @property
+    def chat_model(self) -> str:
+        return llm_config[llm_provider]["chat_model"]
+
+    @property
+    def vision_model(self) -> str:
+        return llm_config[llm_provider]["vision_model"]
 
 
 settings = Settings()
