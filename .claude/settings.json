@@ -15,7 +15,15 @@
       "Bash(python -m uvicorn app.main:app --reload)",
       "Bash(curl -X POST http://localhost:8000/api/v1/chat -H 'Content-Type: application/json' -d '{ *)",
       "Bash(.venv/bin/pip show *)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "Bash(.venv/bin/python -c \"from app.core.streaming import stream_chat; print\\('OK'\\)\")",
+      "Read(//Users/omkarsatapaphy/python_works/My_health_UI/src/**)",
+      "Read(//Users/omkarsatapaphy/python_works/My_health_UI/**)"
+    ],
+    "additionalDirectories": [
+      "/Users/omkarsatapaphy/python_works/My_health_UI/src"
     ]
   }
 }
