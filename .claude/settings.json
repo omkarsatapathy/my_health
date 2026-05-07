@@ -13,7 +13,9 @@
       "Bash(pkill -f \"uvicorn app.main\")",
       "WebSearch",
       "Bash(python -m uvicorn app.main:app --reload)",
-      "Bash(curl -X POST http://localhost:8000/api/v1/chat -H 'Content-Type: application/json' -d '{ *)"
+      "Bash(curl -X POST http://localhost:8000/api/v1/chat -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(uv run *)"
     ]
   }
 }

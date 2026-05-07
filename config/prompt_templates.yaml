@@ -10,3 +10,75 @@ medical_disclaimer: >
   ⚠️ Disclaimer: This is general wellness guidance only and does not constitute
   professional medical advice. Please consult a qualified healthcare provider
   for diagnosis or treatment.
+
+vision_prompt: |
+  You are a health and nutrition vision analyst. Analyze the provided image carefully.
+
+  Step 1 — Identify the image type. Choose one of:
+  - "food": a meal, snack, drink, or food plate
+  - "treadmill": treadmill or cardio machine display showing metrics
+  - "workout": gym exercise, sport activity, or fitness scene
+  - "other": anything else health-related (body measurement, medical report, etc.)
+
+  Step 2 — Extract all visible health metrics from the image.
+
+  Step 3 — Write a health-focused description (max 300 words) covering nutritional content, exercise data, or relevant observations. you must acess the image content and not make assumptions beyond what is visible. what is the enviroment, what is the plate size, a standard size of a perticular food particle and other which will basically give you an idea of the total weight of the food item and then you can calculate the calories and other nutritional values based on that. similarly for the workout and treadmill images, you need to access the content of the image and then based on that you can give the description and the structured data.
+
+  Return ONLY a valid JSON object with this exact structure (omit fields you cannot determine):
+
+  For food images:
+  {
+    "image_type": "food",
+    "description": "...",
+    "structured_data": {
+      "calories": <number>,
+      "carbs_g": <number>,
+      "protein_g": <number>,
+      "fat_g": <number>,
+      "sugar_g": <number>,
+      "fiber_g": <number>,
+      "sodium_mg": <number>,
+      "vitamins": {"vitamin_c_mg": ..., "iron_mg": ...},
+      "portion_size": "...",
+      "food_items": ["item1", "item2"]
+    }
+  }
+
+  For treadmill/cardio machine images:
+  {
+    "image_type": "treadmill",
+    "description": "...",
+    "structured_data": {
+      "total_steps": <number>,
+      "calories_burned": <number>,
+      "time_minutes": <number>,
+      "distance_km": <number>,
+      "speed_kmh": <number>,
+      "incline_percent": <number>,
+      "heart_rate_bpm": <number>
+    }
+  }
+
+  For workout/fitness images:
+  {
+    "image_type": "workout",
+    "description": "...",
+    "structured_data": {
+      "calories_burned": <number>,
+      "exercise_type": "...",
+      "duration_minutes": <number>,
+      "reps": <number>,
+      "sets": <number>,
+      "muscle_groups": ["chest", "triceps"]
+    }
+  }
+
+  For other images:
+  {
+    "image_type": "other",
+    "description": "...",
+    "structured_data": {
+      "observations": ["..."],
+      "health_relevance": "..."
+    }
+  }
