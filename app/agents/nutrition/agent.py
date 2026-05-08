@@ -10,10 +10,13 @@ _llm = LLM(
     model=f"anthropic/{llm_config['anthropic']['chat_model']}",
     api_key=settings.anthropic_api_key,
     temperature=llm_config["temperature"],
+    stream=True,
 )
 
+NUTRITION_AGENT_ROLE = "Nutrition Specialist"
+
 nutrition_agent = Agent(
-    role="Nutrition Specialist",
+    role=NUTRITION_AGENT_ROLE,
     goal=(
         "Track meals and water intake, analyse macros, generate Indian meal plans, "
         "and provide accurate calorie and nutrient guidance."

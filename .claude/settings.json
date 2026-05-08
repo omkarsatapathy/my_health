@@ -36,7 +36,10 @@
       "Bash(AWS_PROFILE=personal-dev aws dynamodb scan --table-name My-health-DB --region ap-south-1 --output json)",
       "Bash(AWS_PROFILE=personal-dev aws dynamodb describe-table --table-name My-health-DB --region ap-south-1 --output json)",
       "Bash(python3 -c \"import json,sys; t=json.load\\(sys.stdin\\)['Table']; print\\('Status:', t['TableStatus']\\); print\\('Keys:', t['KeySchema']\\); print\\('BillingMode:', t.get\\('BillingModeSummary', {}\\).get\\('BillingMode', 'PROVISIONED'\\)\\)\")",
-      "Bash(xargs ls *)"
+      "Bash(xargs ls *)",
+      "Bash(awk '{ print strftime\\(\"%H:%M:%S\"\\), $0; fflush\\(\\) }')",
+      "Read(//opt/homebrew/Caskroom/miniconda/base/envs/ai_env/lib/python3.11/site-packages/crewai/**)",
+      "Bash(lsof -ti:8080)"
     ],
     "additionalDirectories": [
       "/Users/omkarsatapaphy/python_works/My_health_UI/src"

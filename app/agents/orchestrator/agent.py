@@ -91,7 +91,7 @@ def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str
 
 async def run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str:
     """Async wrapper — offloads blocking CrewAI kickoff to a thread."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None, partial(_run_orchestrator, user_id, user_context, chat_summary)
     )

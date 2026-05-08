@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.agents.orchestrator.agent import run_orchestrator
-from app.core.streaming import stream_chat
+from app.agents.orchestrator.streaming import stream_orchestrator
 from app.models.chat import ChatMessage, ChatRequest, ChatResponse
 from app.vision.processor import analyze_image, format_analysis_for_context
 
@@ -58,10 +58,18 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         chat_summary = _build_chat_summary(request.chatHistory)
 
         async def _orch_stream():
-            reply = await run_orchestrator(request.user_id, user_context, chat_summary)
-            for word in reply.split(" "):
-                yield f'data: {{"token": {json.dumps(word + " ")}}}\n\n'
-            yield "data: [DONE]\n\n"
+            # Keep-alive ping so the browser holds the connection while the
+            # context agent + tool calls run before the first real chunk.
+            yield ": ping\n\n"
+            try:
+                async for chunk in stream_orchestrator(
+                    request.user_id, user_context, chat_summary
+                ):
+                    yield f'data: {{"token": {json.dumps(chunk)}}}\n\n'
+            except Exception as exc:
+                yield f'data: {{"error": {json.dumps(str(exc))}}}\n\n'
+            finally:
+                yield "data: [DONE]\n\n"
 
         return StreamingResponse(
             _orch_stream(),
