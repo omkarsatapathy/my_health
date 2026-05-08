@@ -7,6 +7,7 @@ from crewai import Agent, Crew, LLM, Process, Task
 from app.config import llm_config, settings
 from app.agents.nutrition.agent import nutrition_agent
 from app.agents.fitness.agent import fitness_agent
+from app.agents.physician.agent import physician_agent
 from app.agents.orchestrator.tools.intent_tools import (
     classify_intent,
     load_user_context,
@@ -54,6 +55,12 @@ _FITNESS_KEYWORDS = (
     "hiit", "yoga", "rest day", "muscle", "strength",
 )
 
+_PHYSICIAN_INTENTS = {"weight_entry", "body_scan"}
+_PHYSICIAN_KEYWORDS = (
+    "bmi", "obese", "obesity", "sedentary", "health report", "monthly report",
+    "weight", "weighed", "weighing", "body fat",
+)
+
 
 def _extract_intent(context_output: str) -> str:
     """Pull the intent label out of the context task's JSON output."""
@@ -62,11 +69,16 @@ def _extract_intent(context_output: str) -> str:
 
 
 def _select_specialist(intent: str, message: str):
-    """Pick nutrition_agent or fitness_agent from intent + keyword fallback."""
+    """Pick physician, fitness, or nutrition agent from intent + keyword fallback."""
+    if intent in _PHYSICIAN_INTENTS:
+        return physician_agent
     if intent in _FITNESS_INTENTS:
         return fitness_agent
-    if any(kw in message.lower() for kw in _FITNESS_KEYWORDS):
+    msg_lower = message.lower()
+    if any(kw in msg_lower for kw in _FITNESS_KEYWORDS):
         return fitness_agent
+    if any(kw in msg_lower for kw in _PHYSICIAN_KEYWORDS):
+        return physician_agent
     return nutrition_agent
 
 
@@ -109,7 +121,8 @@ def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str
             f"User message: {safe_user_context}\n\n"
             "Routing rules:\n"
             "- Food / meal / water / diet / macro queries -> use nutrition tools.\n"
-            "- Workout / gym / cardio / strength / rest-day / burn-target queries -> use fitness tools.\n\n"
+            "- Workout / gym / cardio / strength / rest-day / burn-target queries -> use fitness tools.\n"
+            "- Weight / BMI / sedentary risk / monthly health report queries -> use physician tools.\n\n"
             "Special instructions:\n"
             "- For meal history queries (e.g., 'what did I eat yesterday?', 'show my meals'), use get_daily_calorie_log with date='yesterday', 'today', or YYYY-MM-DD.\n"
             "- ALWAYS pass the exact user_id when calling any tool.\n"

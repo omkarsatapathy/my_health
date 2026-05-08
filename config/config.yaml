@@ -11,13 +11,13 @@ api:
   host: "0.0.0.0"
 
 llm:
-  provider: anthropic  # "openai" or "anthropic"
+  provider: "openai" #or "anthropic"
   openai:
     chat_model: gpt-4o-mini
     vision_model: gpt-4o-mini
   anthropic:
     chat_model: claude-haiku-4-5-20251001
-    vision_model: claude-haiku-4-5-20251001
+    vision_model: claude-sonnet-4-6
     orchestrator_model: claude-sonnet-4-6
   max_tokens: 1024
   temperature: 0.7
