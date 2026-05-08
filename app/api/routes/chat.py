@@ -1,4 +1,5 @@
 import json
+import traceback
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -38,7 +39,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
         return ChatResponse(content=reply)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
 
 @router.post("/chat/stream")
@@ -67,7 +69,9 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 ):
                     yield f'data: {{"token": {json.dumps(chunk)}}}\n\n'
             except Exception as exc:
-                yield f'data: {{"error": {json.dumps(str(exc))}}}\n\n'
+                traceback.print_exc()
+                payload = json.dumps(f"{type(exc).__name__}: {exc}")
+                yield f'data: {{"error": {payload}}}\n\n'
             finally:
                 yield "data: [DONE]\n\n"
 
@@ -78,4 +82,5 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")

@@ -7,7 +7,10 @@ from crewai.events import crewai_event_bus
 from crewai.events.types.llm_events import LLMStreamChunkEvent
 
 from app.agents.nutrition.agent import NUTRITION_AGENT_ROLE
+from app.agents.fitness.agent import FITNESS_AGENT_ROLE
 from app.agents.orchestrator.agent import _run_orchestrator
+
+_SPECIALIST_ROLES = {NUTRITION_AGENT_ROLE, FITNESS_AGENT_ROLE}
 
 _FINAL_MARKER = "Final Answer:"
 
@@ -25,7 +28,7 @@ def _push(sink: dict, text: str) -> None:
 def _on_chunk(_source, event: LLMStreamChunkEvent) -> None:
     if event.tool_call is not None or not event.chunk:
         return
-    if getattr(event, "agent_role", None) != NUTRITION_AGENT_ROLE:
+    if getattr(event, "agent_role", None) not in _SPECIALIST_ROLES:
         return
     with _sinks_lock:
         sink = _sinks.get(threading.get_ident())

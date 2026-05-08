@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 
@@ -9,6 +10,9 @@ from app.vision.schemas import ImageAnalysisResult
 
 _VISION_PROMPT: str = prompt_templates["vision_prompt"].strip()
 
+# Anthropic-supported image media types
+_SUPPORTED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
 
 def _extract_json(text: str) -> dict:
     """Extract JSON from model response, handling markdown code blocks."""
@@ -19,9 +23,28 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
+def _detect_media_type(b64_data: str, declared: str) -> str:
+    """Sniff actual image format from magic bytes; fall back to declared."""
+    try:
+        head = base64.b64decode(b64_data[:32], validate=False)[:16]
+    except Exception:
+        return declared if declared in _SUPPORTED_MEDIA_TYPES else "image/jpeg"
+
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    return declared if declared in _SUPPORTED_MEDIA_TYPES else "image/jpeg"
+
+
 async def analyze_image(image: ImagePayload) -> ImageAnalysisResult:
     """Send image to vision model and return structured health analysis."""
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    media_type = _detect_media_type(image.data, image.mediaType)
 
     response = await client.messages.create(
         model=settings.vision_model,
@@ -34,7 +57,7 @@ async def analyze_image(image: ImagePayload) -> ImageAnalysisResult:
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": image.mediaType,
+                            "media_type": media_type,
                             "data": image.data,
                         },
                     },

@@ -39,7 +39,9 @@
       "Bash(xargs ls *)",
       "Bash(awk '{ print strftime\\(\"%H:%M:%S\"\\), $0; fflush\\(\\) }')",
       "Read(//opt/homebrew/Caskroom/miniconda/base/envs/ai_env/lib/python3.11/site-packages/crewai/**)",
-      "Bash(lsof -ti:8080)"
+      "Bash(lsof -ti:8080)",
+      "Bash(/Users/omkarsatapaphy/miniconda3/envs/my_health/bin/python -c \"import yaml; d=yaml.safe_load\\(open\\('config/prompt_templates.yaml'\\)\\); print\\('keys:', list\\(d.keys\\(\\)\\)\\); print\\('fitness_system_prompt len:', len\\(d['fitness_system_prompt']\\)\\); print\\('recommend_next_workout len:', len\\(d['recommend_next_workout']\\)\\)\")",
+      "Bash(python3)"
     ],
     "additionalDirectories": [
       "/Users/omkarsatapaphy/python_works/My_health_UI/src"

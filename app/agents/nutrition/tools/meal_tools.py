@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from crewai.tools import tool
@@ -74,7 +74,25 @@ def log_meal_entry(
     return _log_meal_entry(user_id, meal_type, items, total_kcal, macros)
 
 
+def _parse_date(date_input: str) -> str:
+    """Convert relative dates (yesterday, today) or YYYY-MM-DD to YYYY-MM-DD."""
+    date_lower = date_input.strip().lower()
+    today = datetime.now(timezone.utc).date()
+
+    if date_lower == "today":
+        return today.strftime("%Y-%m-%d")
+    elif date_lower == "yesterday":
+        return (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        try:
+            parsed = datetime.strptime(date_input.strip(), "%Y-%m-%d").date()
+            return parsed.strftime("%Y-%m-%d")
+        except ValueError:
+            return today.strftime("%Y-%m-%d")
+
+
 @tool("get_daily_calorie_log")
 def get_daily_calorie_log(user_id: str, date: str) -> dict[str, Any]:
-    """Return all meals logged for date (YYYY-MM-DD) with daily kcal sum."""
-    return _get_daily_calorie_log(user_id, date)
+    """Return all meals logged for a date (supports 'today', 'yesterday', or YYYY-MM-DD) with daily kcal sum."""
+    parsed_date = _parse_date(date)
+    return _get_daily_calorie_log(user_id, parsed_date)
