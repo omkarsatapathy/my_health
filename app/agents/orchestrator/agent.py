@@ -4,64 +4,94 @@ from functools import partial
 from crewai import Agent, Crew, LLM, Process, Task
 
 from app.config import llm_config, settings
+from app.agents.nutrition.agent import nutrition_agent
+from app.agents.orchestrator.tools.intent_tools import (
+    classify_intent,
+    load_user_context,
+    write_lt_memory,
+)
+from app.agents.orchestrator.tools.profile_tools import (
+    get_user_profile,
+    update_user_profile,
+)
 
-_ORCHESTRATOR_MODEL = f"anthropic/{llm_config['anthropic']['orchestrator_model']}"
-
-_orchestrator_llm = LLM(
-    model=_ORCHESTRATOR_MODEL,
+_haiku_llm = LLM(
+    model=f"anthropic/{llm_config['anthropic']['chat_model']}",
     api_key=settings.anthropic_api_key,
     temperature=llm_config["temperature"],
 )
 
-_orchestrator_agent = Agent(
-    role="Health Coach Orchestrator",
+# Context agent: loads user state, classifies intent, writes memory after each turn
+_context_agent = Agent(
+    role="Session Context Manager",
     goal=(
-        "Analyze user health queries — including meal images, workout data, and wellness questions — "
-        "and provide comprehensive, personalized health guidance."
+        "Load user long-term context, classify the intent of the query, "
+        "and persist key facts back to memory after each turn."
     ),
     backstory=(
-        "You are a senior health coach with expertise in nutrition, fitness, and preventive wellness. "
-        "You coordinate specialist knowledge across dietetics, exercise science, and general medicine "
-        "to give users accurate, actionable, and empathetic health advice. "
-        "For Indian users, you prioritize affordable local ingredients and accessible exercises. "
-        "You always append a medical disclaimer for clinical or symptom-related questions."
+        "You are the first agent to handle every user request. "
+        "You load the user's health profile and memory, classify their intent, "
+        "and ensure new facts are saved at the end of each conversation turn."
     ),
-    llm=_orchestrator_llm,
-    tools=[],  # sub-agent tools will be wired here later
+    llm=_haiku_llm,
+    tools=[
+        classify_intent,
+        load_user_context,
+        write_lt_memory,
+        get_user_profile,
+        update_user_profile,
+    ],
     verbose=False,
 )
 
 
-def _run_orchestrator(user_context: str, chat_summary: str) -> str:
-    """Synchronous crew kickoff — run inside a thread pool from async callers."""
-    task = Task(
+def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str:
+    """Synchronous hierarchical crew kickoff — run inside a thread pool."""
+    context_task = Task(
         description=(
-            f"Chat history summary:\n{chat_summary}\n\n"
-            f"Current user query (with any image analysis included):\n{user_context}"
+            f"User ID: {user_id}\n"
+            f"User message: {user_context}\n\n"
+            "1. Call load_user_context to retrieve the user's long-term health profile.\n"
+            "2. Call classify_intent on the user message.\n"
+            "3. Return a JSON summary with intent label, confidence, and the full user context."
         ),
-        agent=_orchestrator_agent,
+        expected_output="JSON with intent, confidence, and user_context object.",
+        agent=_context_agent,
+    )
+
+    response_task = Task(
+        description=(
+            f"User ID (use this exact value for ALL tool calls): {user_id}\n\n"
+            f"Recent chat history:\n{chat_summary}\n\n"
+            f"User message: {user_context}\n\n"
+            "Using the intent and user context from the previous task:\n"
+            "- For food/meal/water/diet/macro queries → use your nutrition tools to log or analyse.\n"
+            "  IMPORTANT: always pass the user_id above when calling any tool.\n"
+            "- Generate a concise, warm, actionable reply with specific numbers where available.\n"
+            "- Call write_lt_memory if new facts were learned (weight, goals, preferences).\n"
+            "- Append a medical disclaimer only for symptom or clinical queries."
+        ),
         expected_output=(
-            "A concise, warm, and actionable health response addressing the user's query. "
-            "Include specific numbers (calories, macros, reps, etc.) when available from image data. "
-            "Add a medical disclaimer only when the query involves symptoms or clinical concerns."
+            "A concise, warm, actionable health response with specific numbers where available."
         ),
+        agent=nutrition_agent,
+        context=[context_task],
     )
 
     crew = Crew(
-        agents=[_orchestrator_agent],
-        tasks=[task],
+        agents=[_context_agent, nutrition_agent],
+        tasks=[context_task, response_task],
         process=Process.sequential,
         verbose=False,
     )
 
-    result = crew.kickoff()
-    print("[Orchestrator] Final response:", result)
+    result = crew.kickoff(inputs={"user_id": user_id})
     return str(result)
 
 
-async def run_orchestrator(user_context: str, chat_summary: str) -> str:
+async def run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str:
     """Async wrapper — offloads blocking CrewAI kickoff to a thread."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
-        None, partial(_run_orchestrator, user_context, chat_summary)
+        None, partial(_run_orchestrator, user_id, user_context, chat_summary)
     )

@@ -28,6 +28,9 @@ llm_provider: LLMProvider = llm_config["provider"]
 class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    aws_profile: str = "personal-dev"
+    aws_region: str = "ap-south-1"
+    dynamodb_table: str = "My-health-DB"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

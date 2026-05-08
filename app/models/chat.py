@@ -17,6 +17,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     chatHistory: list[ChatMessage]
     currentMessage: ChatMessage
+    user_id: str = "default-user"
 
 
 class ChatResponse(BaseModel):

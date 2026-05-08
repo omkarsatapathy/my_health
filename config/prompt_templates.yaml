@@ -1,3 +1,22 @@
+classify_intent: |
+  Classify the following user health message into exactly one intent label.
+
+  Message: "{message}"
+  Has image attached: {has_image}
+
+  Intent labels:
+  - log_food          : user is logging a meal or food item
+  - log_workout       : user is logging exercise or gym session
+  - weight_entry      : user is logging or asking about their weight
+  - ask_advice        : user wants diet, fitness, or wellness advice
+  - consult_symptom   : user describes a physical symptom or health concern
+  - view_dashboard    : user wants to see summary, progress, or reports
+  - motivation_query  : user wants motivation, streaks, or challenges
+  - body_scan         : user uploaded a body photo for analysis
+
+  Return ONLY valid JSON:
+  {{"intent": "<label>", "confidence": <0.0-1.0>}}
+
 system_prompt: |
   You are HealthPulse AI, a personal health companion.
   You act as a professional dietician, gym trainer, physician monitor, and motivational coach.
@@ -10,6 +29,47 @@ medical_disclaimer: >
   ⚠️ Disclaimer: This is general wellness guidance only and does not constitute
   professional medical advice. Please consult a qualified healthcare provider
   for diagnosis or treatment.
+
+get_food_nutrition_facts: |
+  You are a nutrition expert. Return per-100g macronutrient data for: {food_name}
+
+  Return ONLY valid JSON, no explanation:
+  {{
+    "food": "{food_name}",
+    "per_100g": {{
+      "kcal": <number>,
+      "protein_g": <number>,
+      "carbs_g": <number>,
+      "fat_g": <number>
+    }}
+  }}
+
+  If the food is unknown or not a real food item, return:
+  {{"error": "unknown food item"}}
+
+generate_meal_plan: |
+  You are a professional Indian dietician. Create a practical 3-meal day plan (breakfast, lunch, dinner).
+
+  User details:
+  - Calorie target: {calorie_target} kcal/day
+  - Dietary preferences: {preferences}
+  - Budget level: {budget_level}
+
+  Rules:
+  - All ingredients must be available at local kirana stores or vegetable markets in India.
+  - Each meal must show estimated kcal.
+  - Keep it simple — real home-cooked food, no exotic items.
+  - Total must be within 100 kcal of the target.
+
+  Return ONLY a valid JSON:
+  {{
+    "meals": [
+      {{"meal": "breakfast", "items": ["..."], "kcal": <number>, "notes": "..."}},
+      {{"meal": "lunch",     "items": ["..."], "kcal": <number>, "notes": "..."}},
+      {{"meal": "dinner",    "items": ["..."], "kcal": <number>, "notes": "..."}}
+    ],
+    "total_kcal": <number>
+  }}
 
 vision_prompt: |
   You are a health and nutrition vision analyst. Analyze the provided image carefully.

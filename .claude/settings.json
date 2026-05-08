@@ -20,7 +20,23 @@
       "Skill(claude-api:*)",
       "Bash(.venv/bin/python -c \"from app.core.streaming import stream_chat; print\\('OK'\\)\")",
       "Read(//Users/omkarsatapaphy/python_works/My_health_UI/src/**)",
-      "Read(//Users/omkarsatapaphy/python_works/My_health_UI/**)"
+      "Read(//Users/omkarsatapaphy/python_works/My_health_UI/**)",
+      "Bash(aws sts *)",
+      "Read(//Users/omkarsatapaphy/.aws/**)",
+      "Bash(AWS_PROFILE=personal-dev aws sts get-caller-identity)",
+      "Bash(AWS_PROFILE=personal-dev aws dynamodb list-tables --region ap-south-1)",
+      "Bash(aws dynamodb *)",
+      "Bash(AWS_PROFILE=personal-dev aws dynamodb wait table-exists --table-name \"My-health-DB\" --region ap-south-1)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/uv pip *)",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(conda env *)",
+      "Bash(aws configure *)",
+      "Bash(aws iam *)",
+      "Bash(AWS_PROFILE=personal-dev aws dynamodb scan --table-name My-health-DB --region ap-south-1 --output json)",
+      "Bash(AWS_PROFILE=personal-dev aws dynamodb describe-table --table-name My-health-DB --region ap-south-1 --output json)",
+      "Bash(python3 -c \"import json,sys; t=json.load\\(sys.stdin\\)['Table']; print\\('Status:', t['TableStatus']\\); print\\('Keys:', t['KeySchema']\\); print\\('BillingMode:', t.get\\('BillingModeSummary', {}\\).get\\('BillingMode', 'PROVISIONED'\\)\\)\")",
+      "Bash(xargs ls *)"
     ],
     "additionalDirectories": [
       "/Users/omkarsatapaphy/python_works/My_health_UI/src"

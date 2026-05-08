@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -31,7 +33,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             user_context = user_text
 
         chat_summary = _build_chat_summary(request.chatHistory)
-        reply = await run_orchestrator(user_context, chat_summary)
+        reply = await run_orchestrator(request.user_id, user_context, chat_summary)
 
         return ChatResponse(content=reply)
 
@@ -41,28 +43,30 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest) -> StreamingResponse:
-    """SSE endpoint — streams tokens as `data: {"token": "..."}` events."""
+    """SSE endpoint — runs orchestrator (with tools) then streams the reply token-by-token."""
     try:
         current = request.currentMessage
+        user_text = current.content
 
-        # Vision stage: resolve image to text context before streaming
         if current.image:
             analysis = await analyze_image(current.image)
             image_context = format_analysis_for_context(analysis)
-            enriched_content = f"{current.content}\n\n{image_context}"
-            current = ChatMessage(
-                role=current.role,
-                content=enriched_content,
-                image=current.image,
-            )
+            user_context = f"{user_text}\n\n{image_context}"
+        else:
+            user_context = user_text
+
+        chat_summary = _build_chat_summary(request.chatHistory)
+
+        async def _orch_stream():
+            reply = await run_orchestrator(request.user_id, user_context, chat_summary)
+            for word in reply.split(" "):
+                yield f'data: {{"token": {json.dumps(word + " ")}}}\n\n'
+            yield "data: [DONE]\n\n"
 
         return StreamingResponse(
-            stream_chat(request.chatHistory, current),
+            _orch_stream(),
             media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-            },
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     except Exception as e:
