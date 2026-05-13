@@ -50,6 +50,19 @@ def _log_weight_entry(user_id: str, weight_kg: float, confirmed: bool) -> dict[s
         },
     )
 
+    goal = get_item(user_id, "INTAKE#goal") or {}
+    target_kg = float(goal.get("target_kg") or 0)
+    goal_type = (goal.get("goal_type") or "").lower()
+    if target_kg > 0 and (
+        (goal_type == "lose" and weight_kg <= target_kg)
+        or (goal_type == "gain" and weight_kg >= target_kg)
+    ):
+        put_item(
+            user_id=user_id,
+            sk="LIFESTYLE#replan_needed",
+            data={"reason": "target_reached", "flagged_at": ts, "at_weight_kg": str(weight_kg)},
+        )
+
     return {
         "status": "logged",
         "weight_kg": weight_kg,

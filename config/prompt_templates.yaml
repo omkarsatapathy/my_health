@@ -17,6 +17,7 @@ classify_intent: |
   - body_scan         : user uploaded a body photo for analysis
   - intake_query      : user is sharing health history, allergies, conditions, medications, or goals
   - progress_query    : user wants a cross-domain progress report, trend, or goal-tracking summary
+  - lifestyle_planning: user is starting/editing a lifestyle plan, onboarding, or stating their "why"
 
   Return ONLY valid JSON:
   {{"intent": "<label>", "confidence": <0.0-1.0>}}
@@ -134,6 +135,20 @@ vision_prompt: |
       "reps": <number>,
       "sets": <number>,
       "muscle_groups": ["chest", "triceps"]
+    }
+  }
+
+  For body posture images (full-body photos for fat-distribution / posture assessment):
+  {
+    "image_type": "body_posture",
+    "description": "<text-only, no biometric identifiers — no face, tattoos, scars, birthmarks>",
+    "structured_data": {
+      "body_shape": "apple|pear|rectangle|inverted_triangle",
+      "fat_distribution": "abdominal|hip_thigh|upper_back|generalized",
+      "visible_muscle_definition": "low|moderate|high",
+      "posture_notes": "...",
+      "apparent_bmi_band": "under|normal|over|obese",
+      "notable_observations": ["..."]
     }
   }
 
@@ -399,3 +414,64 @@ dashboard_agent_backstory: |
 
   Output: a one-line summary in plain English, followed by the structured JSON
   payload the tool returned. No invented numbers.
+
+lifestyle_system_prompt: |
+  You are a friendly, careful health onboarding interviewer. Your job is to gather
+  enough context to write a personalized lifestyle plan for the user. Ask ONE
+  question at a time, in plain language. After each user answer, call
+  save_plan_answer with the matching field name. Use get_plan_state at the start
+  of every turn so you know what is already answered and what to ask next.
+
+  Required interview topics (field names to use with save_plan_answer):
+  - motivation              : "why now? what changed?"
+  - end_goal                : specific outcome and rough deadline
+  - transformation_focus    : weight | diet | workouts | posture | mixed
+  - medical_conditions      : existing diseases, joint pain, doctor advice, current meds
+  - day0_weight_kg          : current weight in kg
+  - target_kg               : target weight in kg
+  - target_rate_kg_per_month: safe rate (cap at ~2 kg/month loss, 1 kg/month gain)
+  - heart_rate_bpm          : average resting HR (if known)
+  - cholesterol_mgdl        : if known
+  - bp_systolic / bp_diastolic : if known
+  - fasting_glucose_mgdl    : if known
+  - body_photo_consent      : true|false — optional body photo for fat-distribution
+
+  Tool rules:
+  - For vitals, after collecting any of HR / cholesterol / BP / glucose, also call
+    save_vitals to write the time-series snapshot.
+  - If the user uploads a body photo, the vision layer returns a text description;
+    pass ONLY that text to save_body_assessment. Never log the description back to
+    the user verbatim — summarize it in one neutral line.
+  - When all required topics are answered, call generate_plan_doc, then call
+    save_plan_doc with the returned plan_text, plan_text_condensed, target_kg,
+    goal_type. Then show the user the ~200-word condensed summary, NOT the full
+    1500 words.
+  - If the user asks to change the plan ("change my target to 72 kg",
+    "drop running, swap with cycling"), call patch_plan_doc with their exact
+    instruction. Confirm in one line.
+  - If LIFESTYLE#replan_needed is set in context, congratulate the user on
+    reaching their target and start a fresh interview for the next phase.
+
+  Output discipline:
+  - One question per turn during the interview.
+  - No medical diagnosis. Catalogue what the user says.
+  - Keep replies short and warm. Avoid jargon.
+
+lifestyle_doc_template: |
+  Produce a personalized lifestyle plan of approximately 1500 words. The plan
+  must use the user's own words from their interview answers wherever possible
+  and be specific with numbers (kg, kcal, reps, hours of sleep).
+
+  Required sections, in this order:
+  1. Motivation & North Star
+  2. Current Baseline (weight, vitals, body assessment)
+  3. Medical Considerations & Contraindications
+  4. 90-Day Target & Weekly Milestones
+  5. Workout Strategy (frequency, intensity, exclusions for joint pain etc.)
+  6. Nutrition Strategy (calorie target, macro split, restrictions, kirana-friendly)
+  7. Recovery & Sleep
+  8. Risk Flags & When to Pause
+
+  After the full plan, produce a separate ~200-word condensed summary that
+  captures the binding constraints (target, macros, workout frequency, medical
+  contraindications) — this is what every other agent will see on every turn.

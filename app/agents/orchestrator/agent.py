@@ -5,6 +5,7 @@ from functools import partial
 from crewai import Agent, Crew, LLM, Process, Task
 
 from app.config import llm_config, settings
+from app.core.db import get_item
 from app.agents.nutrition.agent import nutrition_agent
 from app.agents.fitness.agent import fitness_agent
 from app.agents.physician.agent import physician_agent
@@ -13,6 +14,7 @@ from app.agents.intake.agent import intake_agent
 from app.agents.progress.agent import progress_agent
 from app.agents.consult.agent import consult_agent
 from app.agents.dashboard.agent import dashboard_agent
+from app.agents.lifestyle.agent import lifestyle_agent
 from app.agents.orchestrator.tools.intent_tools import (
     classify_intent,
     load_user_context,
@@ -90,6 +92,12 @@ _DASHBOARD_KEYWORDS = (
     "last week", "last month", "weekly summary", "monthly summary",
 )
 
+_LIFESTYLE_INTENTS = {"lifestyle_planning"}
+_LIFESTYLE_KEYWORDS = (
+    "plan", "onboarding", "lifestyle", "why now", "starting fresh",
+    "my why", "re-plan", "replan", "transformation",
+)
+
 _CONSULT_INTENTS = {"consult_symptom", "symptom_query", "first_aid", "supplement_query"}
 _CONSULT_KEYWORDS = (
     "pain", "hurt", "ache", "symptom", "headache", "fever", "dizzy", "nausea",
@@ -106,6 +114,8 @@ def _extract_intent(context_output: str) -> str:
 
 def _select_specialist(intent: str, message: str):
     """Pick intake, motivation, physician, fitness, or nutrition agent from intent + keyword fallback."""
+    if intent in _LIFESTYLE_INTENTS:
+        return lifestyle_agent
     if intent in _CONSULT_INTENTS:
         return consult_agent
     if intent in _DASHBOARD_INTENTS:
@@ -121,6 +131,8 @@ def _select_specialist(intent: str, message: str):
     if intent in _FITNESS_INTENTS:
         return fitness_agent
     msg_lower = message.lower()
+    if any(kw in msg_lower for kw in _LIFESTYLE_KEYWORDS):
+        return lifestyle_agent
     if any(kw in msg_lower for kw in _CONSULT_KEYWORDS):
         return consult_agent
     if any(kw in msg_lower for kw in _DASHBOARD_KEYWORDS):
@@ -169,12 +181,25 @@ def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str
     safe_chat_summary = chat_summary.replace("{", "{{").replace("}", "}}")
     safe_user_context = user_context.replace("{", "{{").replace("}", "}}")
 
+    plan = get_item(user_id, "LIFESTYLE#plan") or {}
+    replan = get_item(user_id, "LIFESTYLE#replan_needed") or {}
+    plan_summary = (plan.get("plan_text_condensed") or "").replace("{", "{{").replace("}", "}}")
+    plan_block = (
+        f"\nACTIVE LIFESTYLE PLAN (binding context for all advice):\n{plan_summary}\n"
+        if plan_summary else ""
+    )
+    if replan and replan.get("reason") == "target_reached":
+        plan_block += (
+            "\nNOTE: User has reached their target weight. If relevant, suggest a fresh lifestyle plan.\n"
+        )
+
     response_task = Task(
         description=(
             f"User ID (use this exact value for ALL tool calls): {user_id}\n\n"
             f"Classified intent: {intent}\n\n"
             f"Recent chat history:\n{safe_chat_summary}\n\n"
-            f"User message: {safe_user_context}\n\n"
+            f"User message: {safe_user_context}\n"
+            f"{plan_block}\n"
             "Routing rules:\n"
             "- Food / meal / water / diet / macro queries -> use nutrition tools.\n"
             "- Workout / gym / cardio / strength / rest-day / burn-target queries -> use fitness tools.\n"

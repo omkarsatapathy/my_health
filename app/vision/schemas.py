@@ -37,6 +37,16 @@ class WorkoutAnalysis(BaseModel):
     muscle_groups: Optional[list[str]] = None
 
 
+class BodyPostureAnalysis(BaseModel):
+    image_type: Literal["body_posture"]
+    body_shape: Optional[str] = None
+    fat_distribution: Optional[str] = None
+    visible_muscle_definition: Optional[str] = None
+    posture_notes: Optional[str] = None
+    apparent_bmi_band: Optional[str] = None
+    notable_observations: Optional[list[str]] = None
+
+
 class GeneralAnalysis(BaseModel):
     image_type: Literal["other"]
     observations: Optional[list[str]] = None

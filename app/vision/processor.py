@@ -70,14 +70,20 @@ async def analyze_image(image: ImagePayload) -> ImageAnalysisResult:
     raw = response.content[0].text
     parsed = _extract_json(raw)
 
-    print("Raw vision model response:", raw)
-    print("Parsed vision model response:", parsed)
+    image_type = parsed.get("image_type", "other")
+    if image_type != "body_posture":
+        print("Raw vision model response:", raw)
+        print("Parsed vision model response:", parsed)
 
-    return ImageAnalysisResult(
-        image_type=parsed.get("image_type", "other"),
+    result = ImageAnalysisResult(
+        image_type=image_type,
         structured_data=parsed.get("structured_data", {}),
         description=parsed.get("description", ""),
     )
+
+    # Drop image bytes from local scope so they aren't retained anywhere.
+    image.data = ""
+    return result
 
 
 def format_analysis_for_context(result: ImageAnalysisResult) -> str:

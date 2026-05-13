@@ -13,6 +13,7 @@ _CLASSIFY_PROMPT: str = prompt_templates["classify_intent"]
 INTENT_LABELS = (
     "log_food", "log_workout", "weight_entry", "ask_advice",
     "consult_symptom", "view_dashboard", "motivation_query", "body_scan",
+    "intake_query", "progress_query", "lifestyle_planning",
 )
 
 
@@ -37,8 +38,11 @@ def _classify_intent(message: str, has_image: bool = False) -> dict[str, Any]:
 
 
 def _load_user_context(user_id: str) -> dict[str, Any]:
-    """Read LT memory facts stored in MEMORY#lt for the user."""
+    """Read LT memory facts plus the active lifestyle plan summary and re-plan flag."""
     record = get_item(user_id, "MEMORY#lt") or {}
+    plan = get_item(user_id, "LIFESTYLE#plan") or {}
+    replan = get_item(user_id, "LIFESTYLE#replan_needed") or {}
+    replan_active = bool(replan) and replan.get("reason") and replan.get("reason") != "cleared"
     return {
         "user_id": user_id,
         "weight_kg": record.get("weight_kg"),
@@ -47,6 +51,10 @@ def _load_user_context(user_id: str) -> dict[str, Any]:
         "dietary_prefs": record.get("dietary_prefs", []),
         "motivator_persona": record.get("motivator_persona", "supportive_coach"),
         "goals": record.get("goals", []),
+        "lifestyle_plan_summary": plan.get("plan_text_condensed"),
+        "lifestyle_plan_version": plan.get("version"),
+        "replan_needed": replan_active,
+        "replan_reason": replan.get("reason") if replan_active else None,
     }
 
 
