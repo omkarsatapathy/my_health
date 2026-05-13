@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     aws_profile: str = "personal-dev"
     aws_region: str = "ap-south-1"
     dynamodb_table: str = "My-health-DB"
+    google_search_api_key: str = ""
+    google_search_engine_id: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

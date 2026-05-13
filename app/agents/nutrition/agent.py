@@ -5,6 +5,7 @@ from app.agents.nutrition.tools.meal_tools import log_meal_entry, get_daily_calo
 from app.agents.nutrition.tools.water_tools import log_water_intake
 from app.agents.nutrition.tools.diet_tools import get_diet_schedule, generate_meal_plan
 from app.agents.nutrition.tools.nutrition_tools import get_food_nutrition_facts, calculate_macro_balance
+from app.shared.tools.web_search import web_search
 
 _llm = LLM(
     model=f"anthropic/{llm_config['anthropic']['chat_model']}",
@@ -35,6 +36,7 @@ nutrition_agent = Agent(
         generate_meal_plan,
         get_food_nutrition_facts,
         calculate_macro_balance,
+        web_search,
     ],
     verbose=False,
 )

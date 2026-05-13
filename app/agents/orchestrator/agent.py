@@ -11,6 +11,8 @@ from app.agents.physician.agent import physician_agent
 from app.agents.motivation.agent import motivation_agent
 from app.agents.intake.agent import intake_agent
 from app.agents.progress.agent import progress_agent
+from app.agents.consult.agent import consult_agent
+from app.agents.dashboard.agent import dashboard_agent
 from app.agents.orchestrator.tools.intent_tools import (
     classify_intent,
     load_user_context,
@@ -77,10 +79,22 @@ _INTAKE_KEYWORDS = (
     "surgery", "history", "diagnosed", "goal", "target weight",
 )
 
-_PROGRESS_INTENTS = {"progress_query", "view_dashboard"}
+_PROGRESS_INTENTS = {"progress_query"}
 _PROGRESS_KEYWORDS = (
-    "dashboard", "report", "trend", "summary", "last week", "last month",
-    "on track", "progress", "overview", "snapshot",
+    "report", "trend", "on track", "progress", "overview", "snapshot",
+)
+
+_DASHBOARD_INTENTS = {"view_dashboard"}
+_DASHBOARD_KEYWORDS = (
+    "dashboard", "chart", "graph", "heatmap", "streak board", "summary card",
+    "last week", "last month", "weekly summary", "monthly summary",
+)
+
+_CONSULT_INTENTS = {"consult_symptom", "symptom_query", "first_aid", "supplement_query"}
+_CONSULT_KEYWORDS = (
+    "pain", "hurt", "ache", "symptom", "headache", "fever", "dizzy", "nausea",
+    "cough", "cold", "sore", "supplement", "vitamin", "whey", "creatine",
+    "first aid", "burn", "sprain", "cut", "wound", "bleeding", "nosebleed",
 )
 
 
@@ -92,6 +106,10 @@ def _extract_intent(context_output: str) -> str:
 
 def _select_specialist(intent: str, message: str):
     """Pick intake, motivation, physician, fitness, or nutrition agent from intent + keyword fallback."""
+    if intent in _CONSULT_INTENTS:
+        return consult_agent
+    if intent in _DASHBOARD_INTENTS:
+        return dashboard_agent
     if intent in _INTAKE_INTENTS:
         return intake_agent
     if intent in _PROGRESS_INTENTS:
@@ -103,6 +121,10 @@ def _select_specialist(intent: str, message: str):
     if intent in _FITNESS_INTENTS:
         return fitness_agent
     msg_lower = message.lower()
+    if any(kw in msg_lower for kw in _CONSULT_KEYWORDS):
+        return consult_agent
+    if any(kw in msg_lower for kw in _DASHBOARD_KEYWORDS):
+        return dashboard_agent
     if any(kw in msg_lower for kw in _INTAKE_KEYWORDS):
         return intake_agent
     if any(kw in msg_lower for kw in _PROGRESS_KEYWORDS):
@@ -159,7 +181,9 @@ def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str
             "- Weight / BMI / sedentary risk / monthly health report queries -> use physician tools.\n"
             "- Streaks / weekly challenge / nudges / deficit summary / motivation / reminders -> use motivation tools.\n"
             "- Allergies / conditions / medications / surgeries / health history / goal setting -> use intake tools.\n"
-            "- Cross-domain progress / trend report / dashboard / goal tracking -> use progress tools.\n\n"
+            "- Cross-domain progress / trend report / goal tracking -> use progress tools.\n"
+            "- Dashboard cards / charts / heatmaps / streak board (chart-ready payloads) -> use dashboard tools.\n"
+            "- Symptoms / pain / first aid / supplements / post-workout soreness -> use consult agent (no tools, LLM-only). Always include the medical disclaimer.\n\n"
             "Special instructions:\n"
             "- For meal history queries (e.g., 'what did I eat yesterday?', 'show my meals'), use get_daily_calorie_log with date='yesterday', 'today', or YYYY-MM-DD.\n"
             "- ALWAYS pass the exact user_id when calling any tool.\n"
