@@ -1,6 +1,6 @@
 from crewai import Agent, LLM
 
-from app.config import llm_config, prompt_templates, settings
+from app.config import agent_goals, llm_config, prompt_templates, settings
 from app.agents.dashboard.tools.summary_tools import get_period_summary
 from app.agents.dashboard.tools.chart_tools import get_chart_series
 from app.agents.dashboard.tools.streak_board_tools import get_streak_board
@@ -16,10 +16,7 @@ DASHBOARD_AGENT_ROLE = "Dashboard Analyst"
 
 dashboard_agent = Agent(
     role=DASHBOARD_AGENT_ROLE,
-    goal=(
-        "Produce chart-ready data payloads for the frontend dashboard: "
-        "period summaries, chart series, and streak boards."
-    ),
+    goal=agent_goals["dashboard_goal"],
     backstory=prompt_templates["dashboard_agent_backstory"].strip(),
     llm=_llm,
     tools=[get_period_summary, get_chart_series, get_streak_board],

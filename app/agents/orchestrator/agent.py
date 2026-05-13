@@ -4,7 +4,7 @@ from functools import partial
 
 from crewai import Agent, Crew, LLM, Process, Task
 
-from app.config import llm_config, settings
+from app.config import agent_goals, llm_config, settings
 from app.core.db import get_item
 from app.agents.nutrition.agent import nutrition_agent
 from app.agents.fitness.agent import fitness_agent
@@ -34,10 +34,7 @@ _haiku_llm = LLM(
 # Context agent: loads user state, classifies intent, writes memory after each turn
 _context_agent = Agent(
     role="Session Context Manager",
-    goal=(
-        "Load user long-term context, classify the intent of the query, "
-        "and persist key facts back to memory after each turn."
-    ),
+    goal=agent_goals["orchestrator_goal"],
     backstory=(
         "You are the first agent to handle every user request. "
         "You load the user's health profile and memory, classify their intent, "

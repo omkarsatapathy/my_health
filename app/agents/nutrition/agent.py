@@ -1,6 +1,6 @@
 from crewai import Agent, LLM
 
-from app.config import llm_config, settings
+from app.config import agent_goals, llm_config, settings
 from app.agents.nutrition.tools.meal_tools import log_meal_entry, get_daily_calorie_log
 from app.agents.nutrition.tools.water_tools import log_water_intake
 from app.agents.nutrition.tools.diet_tools import get_diet_schedule, generate_meal_plan
@@ -18,10 +18,7 @@ NUTRITION_AGENT_ROLE = "Nutrition Specialist"
 
 nutrition_agent = Agent(
     role=NUTRITION_AGENT_ROLE,
-    goal=(
-        "Track meals and water intake, analyse macros, generate Indian meal plans, "
-        "and provide accurate calorie and nutrient guidance."
-    ),
+    goal=agent_goals["nutrition_goal"],
     backstory=(
         "You are a certified Indian dietician with deep knowledge of local ingredients "
         "available at kirana stores and vegetable markets. You help users log food, "

@@ -1,6 +1,6 @@
 from crewai import Agent, LLM
 
-from app.config import llm_config, prompt_templates, settings
+from app.config import agent_goals, llm_config, prompt_templates, settings
 from app.agents.motivation.tools.streak_tools import (
     get_streak_data,
     update_streak,
@@ -22,11 +22,7 @@ MOTIVATION_AGENT_ROLE = "Motivational Coach"
 
 motivation_agent = Agent(
     role=MOTIVATION_AGENT_ROLE,
-    goal=(
-        "Track streaks, surface yesterday's deficit and today's burn target, "
-        "escalate on inactivity, run weekly challenges, and schedule push nudges. "
-        "Adapt tone to the user's motivator_persona."
-    ),
+    goal=agent_goals["motivation_goal"],
     backstory=prompt_templates["motivation_system_prompt"],
     llm=_llm,
     tools=[

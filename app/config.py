@@ -15,11 +15,13 @@ def _load_yaml(filename: str) -> dict:
 
 _cfg = _load_yaml("config.yaml")
 _prompts = _load_yaml("prompt_templates.yaml")
+_goals = _load_yaml("agent_goals.yaml")
 
 app_config: dict = _cfg["app"]
 api_config: dict = _cfg["api"]
 llm_config: dict = _cfg["llm"]
 prompt_templates: dict = _prompts
+agent_goals: dict = _goals
 
 LLMProvider = Literal["openai", "anthropic"]
 llm_provider: LLMProvider = llm_config["provider"]
