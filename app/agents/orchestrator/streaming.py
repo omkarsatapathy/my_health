@@ -9,9 +9,15 @@ from crewai.events.types.llm_events import LLMStreamChunkEvent
 from app.agents.nutrition.agent import NUTRITION_AGENT_ROLE
 from app.agents.fitness.agent import FITNESS_AGENT_ROLE
 from app.agents.physician.agent import PHYSICIAN_AGENT_ROLE
+from app.agents.motivation.agent import MOTIVATION_AGENT_ROLE
 from app.agents.orchestrator.agent import _run_orchestrator
 
-_SPECIALIST_ROLES = {NUTRITION_AGENT_ROLE, FITNESS_AGENT_ROLE, PHYSICIAN_AGENT_ROLE}
+_SPECIALIST_ROLES = {
+    NUTRITION_AGENT_ROLE,
+    FITNESS_AGENT_ROLE,
+    PHYSICIAN_AGENT_ROLE,
+    MOTIVATION_AGENT_ROLE,
+}
 
 _FINAL_MARKER = "Final Answer:"
 
