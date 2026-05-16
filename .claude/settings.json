@@ -41,7 +41,9 @@
       "Read(//opt/homebrew/Caskroom/miniconda/base/envs/ai_env/lib/python3.11/site-packages/crewai/**)",
       "Bash(lsof -ti:8080)",
       "Bash(/Users/omkarsatapaphy/miniconda3/envs/my_health/bin/python -c \"import yaml; d=yaml.safe_load\\(open\\('config/prompt_templates.yaml'\\)\\); print\\('keys:', list\\(d.keys\\(\\)\\)\\); print\\('fitness_system_prompt len:', len\\(d['fitness_system_prompt']\\)\\); print\\('recommend_next_workout len:', len\\(d['recommend_next_workout']\\)\\)\")",
-      "Bash(python3)"
+      "Bash(python3)",
+      "Bash(python -c \"from app.agents.lifestyle.agent import lifestyle_agent; print\\('OK', lifestyle_agent.role\\)\")",
+      "Bash(python -c \"from app.agents.orchestrator.agent import _run_orchestrator, lifestyle_agent; print\\('orchestrator OK'\\); print\\('lifestyle tools:', [t.name for t in lifestyle_agent.tools]\\)\")"
     ],
     "additionalDirectories": [
       "/Users/omkarsatapaphy/python_works/My_health_UI/src"

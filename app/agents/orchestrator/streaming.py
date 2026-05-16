@@ -12,6 +12,8 @@ from app.agents.physician.agent import PHYSICIAN_AGENT_ROLE
 from app.agents.motivation.agent import MOTIVATION_AGENT_ROLE
 from app.agents.consult.agent import CONSULT_AGENT_ROLE
 from app.agents.dashboard.agent import DASHBOARD_AGENT_ROLE
+from app.agents.intake.agent import INTAKE_AGENT_ROLE
+from app.agents.lifestyle.agent import LIFESTYLE_AGENT_ROLE
 from app.agents.orchestrator.agent import _run_orchestrator
 
 _SPECIALIST_ROLES = {
@@ -21,6 +23,8 @@ _SPECIALIST_ROLES = {
     MOTIVATION_AGENT_ROLE,
     CONSULT_AGENT_ROLE,
     DASHBOARD_AGENT_ROLE,
+    INTAKE_AGENT_ROLE,
+    LIFESTYLE_AGENT_ROLE,
 }
 
 _FINAL_MARKER = "Final Answer:"
