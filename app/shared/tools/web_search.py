@@ -1,7 +1,7 @@
 from typing import Any
 
 import httpx
-from crewai.tools import tool
+from app.observability import traced_tool as tool
 
 from app.config import settings
 

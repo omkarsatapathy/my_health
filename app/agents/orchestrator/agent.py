@@ -6,6 +6,9 @@ from crewai import Agent, Crew, LLM, Process, Task
 
 from app.config import agent_goals, llm_config, settings
 from app.core.db import get_item
+from app.observability import get_logger, user_id_var
+
+log = get_logger("orchestrator")
 from app.agents.nutrition.agent import nutrition_agent
 from app.agents.fitness.agent import fitness_agent
 from app.agents.physician.agent import physician_agent
@@ -149,6 +152,11 @@ def _select_specialist(intent: str, message: str):
 
 def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str:
     """Two-stage crew: classify intent first, then dispatch to chosen specialist."""
+    user_id_var.set(user_id or "-")
+    log.info(
+        "orchestrator_start",
+        extra={"msg_len": len(user_context or ""), "history_len": len(chat_summary or "")},
+    )
     context_task = Task(
         description=(
             f"User ID: {user_id}\n"
@@ -167,10 +175,19 @@ def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str
         process=Process.sequential,
         verbose=False,
     )
-    context_result = str(context_crew.kickoff(inputs={"user_id": user_id}))
+    log.info("context_crew_kickoff")
+    try:
+        context_result = str(context_crew.kickoff(inputs={"user_id": user_id}))
+    except Exception:
+        log.exception("context_crew_failed")
+        raise
 
     intent = _extract_intent(context_result)
     specialist = _select_specialist(intent, user_context)
+    log.info(
+        "specialist_selected",
+        extra={"intent": intent, "agent_role": getattr(specialist, "role", "?")},
+    )
 
     # Sanitize chat_summary / user_context against CrewAI's str.format-style
     # interpolation: any stray "{key}" in user-supplied text would otherwise
@@ -226,7 +243,14 @@ def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str
         verbose=False,
     )
 
-    return str(response_crew.kickoff())
+    log.info("response_crew_kickoff", extra={"agent_role": getattr(specialist, "role", "?")})
+    try:
+        result = str(response_crew.kickoff())
+    except Exception:
+        log.exception("response_crew_failed", extra={"agent_role": getattr(specialist, "role", "?")})
+        raise
+    log.info("orchestrator_done", extra={"reply_len": len(result or "")})
+    return result
 
 
 async def run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str:

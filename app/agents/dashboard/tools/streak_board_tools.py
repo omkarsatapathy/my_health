@@ -1,6 +1,6 @@
 from typing import Any
 
-from crewai.tools import tool
+from app.observability import traced_tool as tool
 
 from app.agents.motivation.tools.streak_tools import _get_streak_data
 

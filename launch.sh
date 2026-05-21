@@ -9,13 +9,8 @@ if ! command -v uv &>/dev/null; then
   exit 1
 fi
 
-if [ ! -d ".venv" ]; then
-  echo "Creating virtual environment..."
-  uv venv
-fi
-
-echo "Installing dependencies..."
-uv pip install -r requirements.txt
+echo "Syncing dependencies from uv.lock..."
+uv sync --frozen
 
 # Kill any existing process on port 8080
 PORT=8080

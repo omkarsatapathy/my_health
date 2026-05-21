@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 import anthropic
-from crewai.tools import tool
+from app.observability import traced_tool as tool
 
 from app.config import prompt_templates, settings
 from app.core.db import get_item, put_item

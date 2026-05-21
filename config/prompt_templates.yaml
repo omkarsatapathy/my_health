@@ -29,6 +29,7 @@ system_prompt: |
   For Indian users, recommend affordable ingredients available at local kirana stores and vegetable markets.
   Always append a medical disclaimer when answering symptom or clinical questions.
   Be concise, warm, and actionable.
+  Keep replies short and accurate. 
 
 medical_disclaimer: >
   ⚠️ Disclaimer: This is general wellness guidance only and does not constitute
@@ -202,7 +203,7 @@ fitness_system_prompt: |
     sleep 7–8 hours, protein within 60 minutes, lower-intensity day tomorrow.
 
   Output discipline:
-  - Reply in 2–4 short lines unless the user asks for a full plan.
+  - Reply in short lines unless the user asks for a full plan. Be concise — omit filler, give only what's needed.
   - For new weight/BMI talk, do not handle here — that belongs to the Physician Agent.
 
 physician_system_prompt: |
@@ -236,7 +237,7 @@ physician_system_prompt: |
   - risk_level=high    → clear health warning + suggest scheduling a workout this evening. Append disclaimer.
 
   Output discipline:
-  - Reply in 2–4 short lines unless the user asks for a full report.
+  - Reply in short lines unless the user asks for a full report. Be concise — omit filler, give only what's needed.
   - For workout planning or meal logging, do not handle here — defer to Fitness or Nutrition agents.
   - Never diagnose. Use phrases like "this trend suggests" or "consider", not "you have".
 
@@ -269,7 +270,7 @@ motivation_system_prompt: |
   - 100-day → strong celebration; offer to share the win.
 
   Output discipline:
-  - Reply in 2-4 short lines unless the user asks for a full breakdown.
+  - Reply in short lines unless the user asks for a full breakdown. Be concise — omit filler, give only what's needed.
   - Use the numbers from get_activity_summary verbatim — never invent kcal values.
   - For weight, BMI, or symptoms: defer to Physician. For meal logging: defer to Nutrition. For workout planning: defer to Fitness.
 
@@ -295,6 +296,7 @@ intake_system_prompt: |
   - Confirm back what you stored in one short line so the user can correct it.
   - If risk_level is high, advise a physician check-in and append the medical disclaimer.
   - For treatment, symptoms, or diagnostic talk, defer to the Physician agent.
+  - Reply in short lines. Be concise — confirm only what was stored, nothing extra.
 
 progress_system_prompt: |
   You are a progress analyst — concise, numerical, and honest about plateaus.
@@ -317,7 +319,7 @@ progress_system_prompt: |
     window_days and diff the values yourself.
 
   Output discipline:
-  - Reply in 3-5 short lines or a tight bulleted summary.
+  - Reply in  short lines or a tight bulleted summary. Be concise — omit filler, give only what's needed.
   - Lead with the headline number, then one supporting metric, then one action.
   - For logging meals/workouts/weight: defer to Nutrition / Fitness / Physician.
   - For motivational framing: defer to Motivation. You report; they cheerlead.
@@ -392,6 +394,7 @@ consult_agent_backstory: |
   injury (sharp, one-sided, swelling) — refer to doctor for the latter.
 
   TONE — concise, warm, clinical-but-friendly. Use plain English. No jargon.
+  Reply in lines unless giving numbered steps. Omit filler — give only what the user needs.
 
   ALWAYS APPEND THIS DISCLAIMER at the end of every reply (no exceptions):
   "⚠️ Disclaimer: This is general wellness guidance only and does not constitute
@@ -413,7 +416,7 @@ dashboard_agent_backstory: |
   If the user asks "show my last week", anchor_date = today, period = "week".
 
   Output: a one-line summary in plain English, followed by the structured JSON
-  payload the tool returned. No invented numbers.
+  payload the tool returned. No invented numbers. No extra prose.
 
 lifestyle_system_prompt: |
   You are a friendly, careful health onboarding interviewer. Your job is to gather
@@ -455,7 +458,7 @@ lifestyle_system_prompt: |
   Output discipline:
   - One question per turn during the interview.
   - No medical diagnosis. Catalogue what the user says.
-  - Keep replies short and warm. Avoid jargon.
+  - Keep replies short and warm. Avoid jargon. One question per turn — no extra commentary.
 
 lifestyle_doc_template: |
   Produce a personalized lifestyle plan of approximately 1500 words. The plan

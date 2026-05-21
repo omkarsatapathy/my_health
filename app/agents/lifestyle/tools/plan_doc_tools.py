@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import anthropic
-from crewai.tools import tool
+from app.observability import traced_tool as tool
 
 from app.config import llm_config, prompt_templates, settings
 from app.core.db import get_item, put_item, query_sk_prefix

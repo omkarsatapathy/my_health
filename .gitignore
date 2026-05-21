@@ -101,6 +101,7 @@ secrets.yaml
 *~
 .tmp/
 temp/
+Dockerfile
 
 # Node modules (if any frontend)
 node_modules/

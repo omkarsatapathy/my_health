@@ -1,6 +1,6 @@
 from typing import Any
 
-from crewai.tools import tool
+from app.observability import traced_tool as tool
 
 from app.core.db import get_item
 from app.agents.intake.tools.history_tools import _normalize_list

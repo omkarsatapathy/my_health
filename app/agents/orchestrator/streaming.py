@@ -15,6 +15,9 @@ from app.agents.dashboard.agent import DASHBOARD_AGENT_ROLE
 from app.agents.intake.agent import INTAKE_AGENT_ROLE
 from app.agents.lifestyle.agent import LIFESTYLE_AGENT_ROLE
 from app.agents.orchestrator.agent import _run_orchestrator
+from app.observability import get_logger
+
+log = get_logger("orchestrator.streaming")
 
 _SPECIALIST_ROLES = {
     NUTRITION_AGENT_ROLE,
@@ -38,6 +41,15 @@ _DONE = object()
 def _push(sink: dict, text: str) -> None:
     if text:
         sink["loop"].call_soon_threadsafe(sink["queue"].put_nowait, text)
+
+
+def _normalize_final_output(text: str) -> str:
+    if not text:
+        return ""
+    idx = text.find(_FINAL_MARKER)
+    if idx != -1:
+        return text[idx + len(_FINAL_MARKER):].lstrip("\n").lstrip()
+    return text.strip()
 
 
 def _on_chunk(_source, event: LLMStreamChunkEvent) -> None:
@@ -105,7 +117,14 @@ def _run_with_sink(loop, queue, user_id, user_context, chat_summary):
     with _sinks_lock:
         _sinks[tid] = sink
     try:
-        return _run_orchestrator(user_id, user_context, chat_summary)
+        result = _run_orchestrator(user_id, user_context, chat_summary)
+        if not sink["emitting"]:
+            log.info("stream_fallback_emit", extra={"reply_len": len(result or "")})
+            _push(sink, _normalize_final_output(result))
+        return result
+    except Exception:
+        log.exception("stream_orchestrator_error")
+        raise
     finally:
         with _sinks_lock:
             _sinks.pop(tid, None)

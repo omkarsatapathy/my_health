@@ -1,12 +1,16 @@
 import base64
 import json
 import re
+import time
 
 import anthropic
 
 from app.config import prompt_templates, settings
 from app.models.chat import ImagePayload
+from app.observability import get_logger
 from app.vision.schemas import ImageAnalysisResult
+
+log = get_logger("vision")
 
 _VISION_PROMPT: str = prompt_templates["vision_prompt"].strip()
 
@@ -45,35 +49,43 @@ async def analyze_image(image: ImagePayload) -> ImageAnalysisResult:
     """Send image to vision model and return structured health analysis."""
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     media_type = _detect_media_type(image.data, image.mediaType)
-
-    response = await client.messages.create(
-        model=settings.vision_model,
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image.data,
+    log.info("vision_call_start", extra={"model": settings.vision_model, "media_type": media_type})
+    t0 = time.perf_counter()
+    try:
+        response = await client.messages.create(
+            model=settings.vision_model,
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image.data,
+                            },
                         },
-                    },
-                    {"type": "text", "text": _VISION_PROMPT},
-                ],
-            }
-        ],
-    )
+                        {"type": "text", "text": _VISION_PROMPT},
+                    ],
+                }
+            ],
+        )
+    except Exception as e:
+        log.exception("vision_call_error", extra={"error_type": type(e).__name__})
+        raise
 
+    dt = round((time.perf_counter() - t0) * 1000, 1)
     raw = response.content[0].text
-    parsed = _extract_json(raw)
+    try:
+        parsed = _extract_json(raw)
+    except Exception:
+        log.exception("vision_parse_error", extra={"raw_preview": raw[:200]})
+        raise
 
     image_type = parsed.get("image_type", "other")
-    if image_type != "body_posture":
-        print("Raw vision model response:", raw)
-        print("Parsed vision model response:", parsed)
+    log.info("vision_call_ok", extra={"image_type": image_type, "duration_ms": dt})
 
     result = ImageAnalysisResult(
         image_type=image_type,

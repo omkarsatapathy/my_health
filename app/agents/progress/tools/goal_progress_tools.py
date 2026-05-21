@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from crewai.tools import tool
+from app.observability import traced_tool as tool
 
 from app.core.db import get_item
 from app.agents.physician.tools.weight_tools import _get_weight_trend

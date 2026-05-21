@@ -1,6 +1,6 @@
 from typing import Any
 
-from crewai.tools import tool
+from app.observability import traced_tool as tool
 
 
 _MET_TABLE: dict[str, float] = {

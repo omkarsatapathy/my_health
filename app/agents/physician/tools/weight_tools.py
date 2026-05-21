@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from crewai.tools import tool
+from app.observability import traced_tool as tool
 
 from app.agents.physician.tools.health_tools import _calculate_bmi
 from app.core.db import get_item, put_item, query_sk_prefix

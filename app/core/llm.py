@@ -1,8 +1,13 @@
+import time
+
 import anthropic
 from openai import AsyncOpenAI
 
 from app.config import llm_config, llm_provider, prompt_templates, settings
 from app.models.chat import ChatMessage
+from app.observability import get_logger
+
+log = get_logger("core.llm")
 
 _system_prompt: str = prompt_templates["system_prompt"].strip()
 
@@ -77,41 +82,67 @@ def _build_anthropic_messages(history: list[ChatMessage], current: ChatMessage) 
 
 
 async def _call_openai(history: list[ChatMessage], current: ChatMessage) -> str:
-    print('Using OpenAI client')
     model = settings.vision_model if current.image else settings.chat_model
     messages = _build_openai_messages(history, current)
-
-    response = await _get_openai_client().chat.completions.create(
-        model=model,
-        messages=messages,
-        max_completion_tokens=llm_config["max_tokens"],
-        temperature=llm_config["temperature"],
+    log.info("llm_call_start", extra={"provider": "openai", "model": model, "n_messages": len(messages)})
+    t0 = time.perf_counter()
+    try:
+        response = await _get_openai_client().chat.completions.create(
+            model=model,
+            messages=messages,
+            max_completion_tokens=llm_config["max_tokens"],
+            temperature=llm_config["temperature"],
+        )
+    except Exception as e:
+        log.exception("llm_call_error", extra={"provider": "openai", "model": model, "error_type": type(e).__name__})
+        raise
+    dt = round((time.perf_counter() - t0) * 1000, 1)
+    usage = getattr(response, "usage", None)
+    log.info(
+        "llm_call_ok",
+        extra={
+            "provider": "openai",
+            "model": model,
+            "duration_ms": dt,
+            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+            "completion_tokens": getattr(usage, "completion_tokens", None),
+        },
     )
-    print('OpenAI response:', response.choices[0].message.content)
     return response.choices[0].message.content
 
 
 async def _call_anthropic(history: list[ChatMessage], current: ChatMessage) -> str:
-    print('Using anthropic client')
     model = settings.vision_model if current.image else settings.chat_model
     messages = _build_anthropic_messages(history, current)
-
-    response = await _get_anthropic_client().messages.create(
-        model=model,
-        system=_system_prompt,
-        messages=messages,
-        max_tokens=llm_config["max_tokens"],
-        temperature=llm_config["temperature"],
+    log.info("llm_call_start", extra={"provider": "anthropic", "model": model, "n_messages": len(messages)})
+    t0 = time.perf_counter()
+    try:
+        response = await _get_anthropic_client().messages.create(
+            model=model,
+            system=_system_prompt,
+            messages=messages,
+            max_tokens=llm_config["max_tokens"],
+            temperature=llm_config["temperature"],
+        )
+    except Exception as e:
+        log.exception("llm_call_error", extra={"provider": "anthropic", "model": model, "error_type": type(e).__name__})
+        raise
+    dt = round((time.perf_counter() - t0) * 1000, 1)
+    usage = getattr(response, "usage", None)
+    log.info(
+        "llm_call_ok",
+        extra={
+            "provider": "anthropic",
+            "model": model,
+            "duration_ms": dt,
+            "input_tokens": getattr(usage, "input_tokens", None),
+            "output_tokens": getattr(usage, "output_tokens", None),
+        },
     )
-    print('Anthropic response:', response)
     return response.content[0].text
 
 
 async def call_chat_llm(history: list[ChatMessage], current: ChatMessage) -> str:
     if llm_provider == "anthropic":
-        result = await _call_anthropic(history, current)
-    else:
-        result = await _call_openai(history, current)
-
-    print(f"[{llm_provider}] LLM Response:", result)
-    return result
+        return await _call_anthropic(history, current)
+    return await _call_openai(history, current)
