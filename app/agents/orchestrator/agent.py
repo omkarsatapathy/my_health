@@ -4,7 +4,7 @@ from functools import partial
 
 from crewai import Agent, Crew, LLM, Process, Task
 
-from app.config import agent_goals, llm_config, settings
+from app.config import agent_goals, llm_config, planning_config, settings
 from app.core.db import get_item
 from app.observability import get_logger, user_id_var
 
@@ -18,7 +18,10 @@ from app.agents.progress.agent import progress_agent
 from app.agents.consult.agent import consult_agent
 from app.agents.dashboard.agent import dashboard_agent
 from app.agents.lifestyle.agent import lifestyle_agent
+from app.agents.orchestrator.planning.executor import run_planner_path, should_use_planner
 from app.agents.orchestrator.tools.intent_tools import (
+    _classify_intent,
+    _load_user_context,
     classify_intent,
     load_user_context,
     write_lt_memory,
@@ -83,7 +86,14 @@ _INTAKE_KEYWORDS = (
 
 _PROGRESS_INTENTS = {"progress_query"}
 _PROGRESS_KEYWORDS = (
-    "report", "trend", "on track", "progress", "overview", "snapshot",
+    "trend", "on track", "plateau", "goal eta", "goal progress",
+    "over the last", "over the past", "this week vs", "month-over-month",
+    "weekly comparison", "monthly comparison", "progress snapshot",
+)
+# Daily-lookup tokens that should NEVER route to progress even if "progress"-ish
+# keywords appear. Used as a veto inside _select_specialist.
+_DAILY_LOOKUP_TOKENS = (
+    "today", "yesterday", "right now", "currently", "this morning",
 )
 
 _DASHBOARD_INTENTS = {"view_dashboard"}
@@ -105,6 +115,16 @@ _CONSULT_KEYWORDS = (
     "first aid", "burn", "sprain", "cut", "wound", "bleeding", "nosebleed",
 )
 
+_NUTRITION_INTENTS = {"log_food", "ask_advice"}
+
+
+def _kw_hit(text: str, keywords) -> bool:
+    """Word-boundary keyword match — avoids 'burn' matching 'burnt onions'."""
+    for kw in keywords:
+        if re.search(rf"\b{re.escape(kw)}\b", text):
+            return True
+    return False
+
 
 def _extract_intent(context_output: str) -> str:
     """Pull the intent label out of the context task's JSON output."""
@@ -114,6 +134,20 @@ def _extract_intent(context_output: str) -> str:
 
 def _select_specialist(intent: str, message: str):
     """Pick intake, motivation, physician, fitness, or nutrition agent from intent + keyword fallback."""
+    msg_lower = message.lower()
+    is_daily_lookup = any(tok in msg_lower for tok in _DAILY_LOOKUP_TOKENS)
+
+    # Veto: daily-value lookups never go to progress/dashboard even if the
+    # classifier slipped. Re-route to the right domain agent by keyword.
+    if is_daily_lookup and intent in (_PROGRESS_INTENTS | _DASHBOARD_INTENTS):
+        if _kw_hit(msg_lower, _FITNESS_KEYWORDS):
+            return fitness_agent
+        if _kw_hit(msg_lower, _PHYSICIAN_KEYWORDS):
+            return physician_agent
+        return nutrition_agent
+
+    if intent in _NUTRITION_INTENTS:
+        return nutrition_agent
     if intent in _LIFESTYLE_INTENTS:
         return lifestyle_agent
     if intent in _CONSULT_INTENTS:
@@ -130,82 +164,58 @@ def _select_specialist(intent: str, message: str):
         return physician_agent
     if intent in _FITNESS_INTENTS:
         return fitness_agent
-    msg_lower = message.lower()
-    if any(kw in msg_lower for kw in _LIFESTYLE_KEYWORDS):
+    if _kw_hit(msg_lower, _LIFESTYLE_KEYWORDS):
         return lifestyle_agent
-    if any(kw in msg_lower for kw in _CONSULT_KEYWORDS):
+    if _kw_hit(msg_lower, _CONSULT_KEYWORDS):
         return consult_agent
-    if any(kw in msg_lower for kw in _DASHBOARD_KEYWORDS):
+    if _kw_hit(msg_lower, _DASHBOARD_KEYWORDS):
         return dashboard_agent
-    if any(kw in msg_lower for kw in _INTAKE_KEYWORDS):
+    if _kw_hit(msg_lower, _INTAKE_KEYWORDS):
         return intake_agent
-    if any(kw in msg_lower for kw in _PROGRESS_KEYWORDS):
+    if _kw_hit(msg_lower, _PROGRESS_KEYWORDS) and not is_daily_lookup:
         return progress_agent
-    if any(kw in msg_lower for kw in _MOTIVATION_KEYWORDS):
+    if _kw_hit(msg_lower, _MOTIVATION_KEYWORDS):
         return motivation_agent
-    if any(kw in msg_lower for kw in _FITNESS_KEYWORDS):
+    if _kw_hit(msg_lower, _FITNESS_KEYWORDS):
         return fitness_agent
-    if any(kw in msg_lower for kw in _PHYSICIAN_KEYWORDS):
+    if _kw_hit(msg_lower, _PHYSICIAN_KEYWORDS):
         return physician_agent
     return nutrition_agent
 
 
-def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str:
-    """Two-stage crew: classify intent first, then dispatch to chosen specialist."""
-    user_id_var.set(user_id or "-")
-    log.info(
-        "orchestrator_start",
-        extra={"msg_len": len(user_context or ""), "history_len": len(chat_summary or "")},
+def _get_plan_block(user_id: str) -> tuple[str, str]:
+    """Return (raw_plan_summary, formatted_plan_block_for_prompt)."""
+    plan = get_item(user_id, "LIFESTYLE#plan") or {}
+    replan = get_item(user_id, "LIFESTYLE#replan_needed") or {}
+    plan_summary = plan.get("plan_text_condensed") or ""
+    safe = plan_summary.replace("{", "{{").replace("}", "}}")
+    block = (
+        f"\nACTIVE LIFESTYLE PLAN (binding context for all advice):\n{safe}\n"
+        if safe else ""
     )
-    context_task = Task(
-        description=(
-            f"User ID: {user_id}\n"
-            f"User message: {user_context}\n\n"
-            "1. Call load_user_context to retrieve the user's long-term health profile.\n"
-            "2. Call classify_intent on the user message.\n"
-            "3. Return a JSON summary with intent label, confidence, and the full user context."
-        ),
-        expected_output="JSON with intent, confidence, and user_context object.",
-        agent=_context_agent,
-    )
+    if replan and replan.get("reason") == "target_reached":
+        block += (
+            "\nNOTE: User has reached their target weight. If relevant, suggest a fresh lifestyle plan.\n"
+        )
+    return plan_summary, block
 
-    context_crew = Crew(
-        agents=[_context_agent],
-        tasks=[context_task],
-        process=Process.sequential,
-        verbose=False,
-    )
-    log.info("context_crew_kickoff")
-    try:
-        context_result = str(context_crew.kickoff(inputs={"user_id": user_id}))
-    except Exception:
-        log.exception("context_crew_failed")
-        raise
 
-    intent = _extract_intent(context_result)
+def _run_fast_path(
+    user_id: str,
+    user_context: str,
+    chat_summary: str,
+    intent: str,
+) -> str:
+    """Single-specialist fast path. Caller has already classified the intent."""
     specialist = _select_specialist(intent, user_context)
     log.info(
         "specialist_selected",
         extra={"intent": intent, "agent_role": getattr(specialist, "role", "?")},
     )
 
-    # Sanitize chat_summary / user_context against CrewAI's str.format-style
-    # interpolation: any stray "{key}" in user-supplied text would otherwise
-    # raise KeyError on Crew.kickoff.
     safe_chat_summary = chat_summary.replace("{", "{{").replace("}", "}}")
     safe_user_context = user_context.replace("{", "{{").replace("}", "}}")
-
-    plan = get_item(user_id, "LIFESTYLE#plan") or {}
-    replan = get_item(user_id, "LIFESTYLE#replan_needed") or {}
-    plan_summary = (plan.get("plan_text_condensed") or "").replace("{", "{{").replace("}", "}}")
-    plan_block = (
-        f"\nACTIVE LIFESTYLE PLAN (binding context for all advice):\n{plan_summary}\n"
-        if plan_summary else ""
-    )
-    if replan and replan.get("reason") == "target_reached":
-        plan_block += (
-            "\nNOTE: User has reached their target weight. If relevant, suggest a fresh lifestyle plan.\n"
-        )
+    _, plan_block = _get_plan_block(user_id)
 
     response_task = Task(
         description=(
@@ -214,19 +224,26 @@ def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str
             f"Recent chat history:\n{safe_chat_summary}\n\n"
             f"User message: {safe_user_context}\n"
             f"{plan_block}\n"
-            "Routing rules:\n"
-            "- Food / meal / water / diet / macro queries -> use nutrition tools.\n"
-            "- Workout / gym / cardio / strength / rest-day / burn-target queries -> use fitness tools.\n"
-            "- Weight / BMI / sedentary risk / monthly health report queries -> use physician tools.\n"
-            "- Streaks / weekly challenge / nudges / deficit summary / motivation / reminders -> use motivation tools.\n"
-            "- Allergies / conditions / medications / surgeries / health history / goal setting -> use intake tools.\n"
-            "- Cross-domain progress / trend report / goal tracking -> use progress tools.\n"
-            "- Dashboard cards / charts / heatmaps / streak board (chart-ready payloads) -> use dashboard tools.\n"
-            "- Symptoms / pain / first aid / supplements / post-workout soreness -> use consult agent (no tools, LLM-only). Always include the medical disclaimer.\n\n"
-            "Special instructions:\n"
-            "- For meal history queries (e.g., 'what did I eat yesterday?', 'show my meals'), use get_daily_calorie_log with date='yesterday', 'today', or YYYY-MM-DD.\n"
-            "- ALWAYS pass the exact user_id when calling any tool.\n"
-            "- If the agent doesn't have the right tools, explain what data would be needed.\n\n"
+            "Routing rules (TIME WINDOW matters — single-day = domain agent; multi-day = progress):\n"
+            "- Single-day food / meal / water / macro / calories-in (today / yesterday / specific date)\n"
+            "  -> Nutrition. For lookups call get_daily_calorie_log(date=...).\n"
+            "- Single-day workout / calories-burned (today / yesterday / specific date) -> Fitness.\n"
+            "- Single-day weight / BMI / current body metrics -> Physician.\n"
+            "- Multi-day TREND, plateau, goal ETA, on-track status, week-vs-week, month-over-month\n"
+            "  -> Progress. NEVER use Progress for 'what is my X today/yesterday'.\n"
+            "- Streaks / weekly challenge / nudges / deficit framing / reminders -> Motivation.\n"
+            "- Allergies / conditions / medications / surgeries / long-term goal setting -> Intake.\n"
+            "- Charts / graphs / heatmaps / streak board (visual payloads only) -> Dashboard.\n"
+            "  A plain-text 'how much X' is NOT a dashboard request.\n"
+            "- Symptoms / pain / first aid / supplements / post-workout soreness -> Consult\n"
+            "  (LLM-only). Always include the medical disclaimer.\n\n"
+            "Hard rules:\n"
+            "- If the user asks for TODAY'S or YESTERDAY'S value of any metric, do NOT route to\n"
+            "  Progress or Dashboard. Use the domain agent and its single-day tool.\n"
+            "- If the chosen agent does not own the right tool for this query, reply in ONE line\n"
+            "  naming the correct agent — do not fabricate numbers.\n"
+            "- ALWAYS pass the exact user_id above when calling any tool.\n"
+            "- Append the medical disclaimer only for symptom / clinical queries.\n\n"
             "Generate a concise, warm, actionable reply with specific numbers where available. "
             "Append a medical disclaimer only for symptom or clinical queries."
         ),
@@ -253,9 +270,54 @@ def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str
     return result
 
 
+def _run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str:
+    """Sync fast-path entry. Streaming layer calls this directly inside a thread."""
+    user_id_var.set(user_id or "-")
+    log.info(
+        "orchestrator_start",
+        extra={"msg_len": len(user_context or ""), "history_len": len(chat_summary or "")},
+    )
+    intent_result = _classify_intent(user_context)
+    intent = intent_result.get("intent", "unknown")
+    log.info(
+        "intent_classified",
+        extra={"intent": intent, "confidence": intent_result.get("confidence")},
+    )
+    return _run_fast_path(user_id, user_context, chat_summary, intent)
+
+
 async def run_orchestrator(user_id: str, user_context: str, chat_summary: str) -> str:
-    """Async wrapper — offloads blocking CrewAI kickoff to a thread."""
+    """Async entry. Picks planner path for compound/low-confidence queries, fast path otherwise."""
+    user_id_var.set(user_id or "-")
     loop = asyncio.get_running_loop()
+    log.info(
+        "orchestrator_async_start",
+        extra={"msg_len": len(user_context or ""), "history_len": len(chat_summary or "")},
+    )
+
+    intent_result = await loop.run_in_executor(None, _classify_intent, user_context)
+    intent = intent_result.get("intent", "unknown")
+    log.info(
+        "intent_classified",
+        extra={"intent": intent, "confidence": intent_result.get("confidence")},
+    )
+
+    if should_use_planner(user_context, intent_result):
+        log.info("route_decision", extra={"path": "planner"})
+        ctx = await loop.run_in_executor(None, _load_user_context, user_id)
+        plan_summary, _ = await loop.run_in_executor(None, _get_plan_block, user_id)
+        reply = await run_planner_path(
+            user_id=user_id,
+            message=user_context,
+            chat_summary=chat_summary,
+            user_context=ctx,
+            plan_summary=plan_summary,
+        )
+        if reply is not None:
+            return reply
+        log.warning("planner_path_fallback_to_fast")
+
+    log.info("route_decision", extra={"path": "fast", "intent": intent})
     return await loop.run_in_executor(
-        None, partial(_run_orchestrator, user_id, user_context, chat_summary)
+        None, partial(_run_fast_path, user_id, user_context, chat_summary, intent),
     )

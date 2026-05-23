@@ -43,6 +43,19 @@ def _safe(v):
         return str(v)
 
 
+class _AccessLogFilter(logging.Filter):
+    """Drop uvicorn access lines for health-probe paths."""
+
+    _SILENT = ("/ping", "/health")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            path = record.args[2] if record.args and len(record.args) >= 3 else ""
+        except Exception:
+            path = ""
+        return not any(p in str(path) for p in self._SILENT)
+
+
 _configured = False
 
 
@@ -63,6 +76,8 @@ def setup_logging(level: str | None = None) -> None:
     # Quiet noisy 3rd-party loggers
     for noisy in ("botocore", "boto3", "urllib3", "httpx", "httpcore", "openai", "anthropic"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    logging.getLogger("uvicorn.access").addFilter(_AccessLogFilter())
 
     _configured = True
     logging.getLogger(__name__).info("logging_initialized", extra={"level": log_level})

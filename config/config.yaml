@@ -17,7 +17,20 @@ llm:
     vision_model: gpt-4o-mini
   anthropic:
     chat_model: claude-haiku-4-5-20251001
-    vision_model: claude-sonnet-4-6
-    orchestrator_model: claude-sonnet-4-6
+    # vision_model: claude-sonnet-4-6
+    vision_model: claude-haiku-4-5-20251001
+    # orchestrator_model: claude-sonnet-4-5-20250929
+    orchestrator_model: claude-haiku-4-5-20251001
+    planner_model: claude-sonnet-4-5-20250929
+    synthesizer_model: claude-haiku-4-5-20251001
   max_tokens: 1024
   temperature: 0.7
+
+planning:
+  enabled: true
+  always_plan: true            # when true, every turn goes through the planner
+  fast_path_confidence_threshold: 0.85  # only used when always_plan: false
+  max_steps: 6
+  max_parallel: 3
+  step_timeout_seconds: 45
+  total_timeout_seconds: 90

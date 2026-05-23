@@ -20,6 +20,7 @@ _goals = _load_yaml("agent_goals.yaml")
 app_config: dict = _cfg["app"]
 api_config: dict = _cfg["api"]
 llm_config: dict = _cfg["llm"]
+planning_config: dict = _cfg.get("planning", {"enabled": False})
 prompt_templates: dict = _prompts
 agent_goals: dict = _goals
 

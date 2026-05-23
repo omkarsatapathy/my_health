@@ -93,6 +93,8 @@ async def analyze_image(image: ImagePayload) -> ImageAnalysisResult:
         description=parsed.get("description", ""),
     )
 
+    print("Vision analysis result:", result)
+
     # Drop image bytes from local scope so they aren't retained anywhere.
     image.data = ""
     return result

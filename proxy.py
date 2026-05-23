@@ -37,26 +37,37 @@ app.add_middleware(
 async def stream(request: Request):
     payload = await request.body()
     session_id = request.headers.get("x-session-id") or f"sess-{uuid.uuid4().hex}-{uuid.uuid4().hex}"
+    print(f"[proxy] -> AgentCore session={session_id[:24]}… bytes={len(payload)}", flush=True)
 
-    resp = client.invoke_agent_runtime(
-        agentRuntimeArn=RUNTIME_ARN,
-        qualifier="DEFAULT",
-        runtimeSessionId=session_id,
-        payload=payload,
-        accept="text/event-stream",
-        contentType="application/json",
-    )
+    try:
+        resp = client.invoke_agent_runtime(
+            agentRuntimeArn=RUNTIME_ARN,
+            qualifier="DEFAULT",
+            runtimeSessionId=session_id,
+            payload=payload,
+            accept="text/event-stream",
+            contentType="application/json",
+        )
+    except Exception as exc:
+        print(f"[proxy] !! invoke_agent_runtime failed: {type(exc).__name__}: {exc}", flush=True)
+        raise
+
     raw = resp["response"]._raw_stream  # urllib3 HTTPResponse — true progressive read
 
     async def gen():
         import anyio
         def read_once():
             return raw.read(amt=64, decode_content=True)
-        while True:
-            chunk = await anyio.to_thread.run_sync(read_once)
-            if not chunk:
-                break
-            yield chunk
+        total = 0
+        try:
+            while True:
+                chunk = await anyio.to_thread.run_sync(read_once)
+                if not chunk:
+                    break
+                total += len(chunk)
+                yield chunk
+        finally:
+            print(f"[proxy] <- stream done session={session_id[:24]}… bytes_out={total}", flush=True)
 
     return StreamingResponse(
         gen(),

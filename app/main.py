@@ -29,24 +29,30 @@ app.add_middleware(
 )
 
 
+_SILENT_PATHS = {"/ping", "/health"}
+
+
 @app.middleware("http")
 async def request_logger(request: Request, call_next):
     rid = request.headers.get("x-request-id") or new_request_id()
     token = request_id_var.set(rid)
-    log.info(
-        "http_request_start",
-        extra={"method": request.method, "path": request.url.path},
-    )
+    silent = request.url.path in _SILENT_PATHS
+    if not silent:
+        log.info(
+            "http_request_start",
+            extra={"method": request.method, "path": request.url.path},
+        )
     try:
         response = await call_next(request)
     except Exception:
         log.exception("http_request_error", extra={"path": request.url.path})
         raise
     finally:
-        log.info(
-            "http_request_end",
-            extra={"method": request.method, "path": request.url.path},
-        )
+        if not silent:
+            log.info(
+                "http_request_end",
+                extra={"method": request.method, "path": request.url.path},
+            )
         request_id_var.reset(token)
         clear_request_context()
     response.headers["x-request-id"] = rid
