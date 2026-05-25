@@ -60,6 +60,7 @@ Thumbs.db
 docker-compose.override.yml
 .docker/
 docker-config.json
+deploy/lambda/.build
 
 # Logs
 *.log

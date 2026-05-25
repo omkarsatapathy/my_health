@@ -111,6 +111,18 @@ synthesizer_prompt: |
   - You may use light markdown (bold key numbers, short bullet lists for multi-item
     data like meals or workout sets) but no big headers, no walls of text.
 
+session_title: |
+  Write a plain-text chat title in 4 to 6 words.
+
+  User message: "{first_user_text}"
+  Assistant reply: "{first_assistant_text}"
+
+  Rules:
+  - Return plain text only.
+  - No quotes.
+  - No punctuation.
+  - Keep the wording specific to the topic.
+
 classify_intent: |
   Classify the user health message into EXACTLY ONE intent label.
 

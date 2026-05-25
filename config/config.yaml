@@ -34,3 +34,8 @@ planning:
   max_parallel: 3
   step_timeout_seconds: 45
   total_timeout_seconds: 90
+
+storage:
+  chat_media_bucket: my-health-chat-media
+  presigned_url_ttl_seconds: 900
+  session_list_page_size: 50

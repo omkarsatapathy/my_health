@@ -1,11 +1,23 @@
+import asyncio
+import base64
 import json
 import traceback
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.agents.orchestrator.agent import run_orchestrator
 from app.agents.orchestrator.streaming import stream_orchestrator
+from app.config import DEFAULT_USER_ID
+from app.core.chat_store import (
+    append_message,
+    create_session,
+    get_session,
+    get_session_detail,
+    new_message_id,
+    update_session_title_from_first_turn,
+)
+from app.core.s3 import upload_image_bytes
 from app.models.chat import ChatMessage, ChatRequest, ChatResponse
 from app.observability import get_logger, user_id_var
 from app.vision.processor import analyze_image, format_analysis_for_context
@@ -22,9 +34,74 @@ def _build_chat_summary(history: list[ChatMessage]) -> str:
     return "\n".join(lines)
 
 
+def _resolve_user_id(request: ChatRequest) -> str:
+    return request.user_id or DEFAULT_USER_ID
+
+
+def _resolve_session_id(user_id: str, requested_session_id: str | None) -> tuple[str, bool]:
+    if requested_session_id:
+        session = get_session(user_id, requested_session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return requested_session_id, False
+    session = create_session(user_id)
+    return session.session_id, True
+
+
+async def _build_user_context_and_image(
+    current: ChatMessage,
+    user_id: str,
+    session_id: str,
+) -> tuple[str, dict | None, str | None]:
+    user_text = current.content
+    if not current.image:
+        return user_text, None, None
+
+    image_data = current.image.data or ""
+    raw_bytes = base64.b64decode(image_data)
+    message_id = new_message_id()
+    s3_key = upload_image_bytes(
+        user_id=user_id,
+        session_id=session_id,
+        msg_id=message_id,
+        media_type=current.image.mediaType,
+        raw_bytes=raw_bytes,
+    )
+
+    log.info("vision_analyze_start")
+    analysis = await analyze_image(current.image)
+    log.info("vision_analyze_ok", extra={"image_type": analysis.image_type})
+    image_context = format_analysis_for_context(analysis)
+    image_payload = {
+        "s3_key": s3_key,
+        "media_type": current.image.mediaType,
+        "vision_summary": image_context,
+    }
+    return f"{user_text}\n\n{image_context}", image_payload, message_id
+
+
+def _maybe_schedule_title(
+    background_tasks: BackgroundTasks,
+    user_id: str,
+    session_id: str,
+    first_user_text: str,
+    first_assistant_text: str,
+) -> None:
+    detail = get_session_detail(user_id, session_id)
+    if detail and len(detail.messages) == 2:
+        background_tasks.add_task(
+            update_session_title_from_first_turn,
+            user_id,
+            session_id,
+            first_user_text,
+            first_assistant_text,
+        )
+
+
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
-    user_id_var.set(request.user_id or "-")
+async def chat(request: ChatRequest, background_tasks: BackgroundTasks) -> ChatResponse:
+    user_id = _resolve_user_id(request)
+    user_id_var.set(user_id)
     try:
         current = request.currentMessage
         has_image = current.image is not None
@@ -32,23 +109,32 @@ async def chat(request: ChatRequest) -> ChatResponse:
             "chat_received",
             extra={"has_image": has_image, "history_len": len(request.chatHistory)},
         )
-        user_text = current.content
+        session_id, _created = _resolve_session_id(user_id, request.session_id)
+        user_context, image_payload, image_message_id = await _build_user_context_and_image(
+            current,
+            user_id,
+            session_id,
+        )
 
-        if current.image:
-            log.info("vision_analyze_start")
-            analysis = await analyze_image(current.image)
-            log.info("vision_analyze_ok", extra={"image_type": analysis.image_type})
-            image_context = format_analysis_for_context(analysis)
-            user_context = f"{user_text}\n\n{image_context}"
-        else:
-            user_context = user_text
+        append_message(
+            user_id,
+            session_id,
+            "user",
+            current.content,
+            image=image_payload,
+            message_id=image_message_id,
+        )
 
         chat_summary = _build_chat_summary(request.chatHistory)
-        reply = await run_orchestrator(request.user_id, user_context, chat_summary)
+        reply = await run_orchestrator(user_id, user_context, chat_summary)
+        append_message(user_id, session_id, "assistant", reply)
+        _maybe_schedule_title(background_tasks, user_id, session_id, current.content, reply)
         log.info("chat_ok", extra={"reply_len": len(reply or "")})
 
-        return ChatResponse(content=reply)
+        return ChatResponse(content=reply, session_id=session_id)
 
+    except HTTPException:
+        raise
     except Exception as e:
         log.exception("chat_error", extra={"error_type": type(e).__name__})
         traceback.print_exc()
@@ -56,9 +142,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest) -> StreamingResponse:
+async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks) -> StreamingResponse:
     """SSE endpoint — runs orchestrator (with tools) then streams the reply token-by-token."""
-    user_id_var.set(request.user_id or "-")
+    user_id = _resolve_user_id(request)
+    user_id_var.set(user_id)
     try:
         current = request.currentMessage
         has_image = current.image is not None
@@ -66,43 +153,75 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             "chat_stream_received",
             extra={"has_image": has_image, "history_len": len(request.chatHistory)},
         )
-        user_text = current.content
-
-        if current.image:
-            log.info("vision_analyze_start")
-            analysis = await analyze_image(current.image)
-            log.info("vision_analyze_ok", extra={"image_type": analysis.image_type})
-            image_context = format_analysis_for_context(analysis)
-            user_context = f"{user_text}\n\n{image_context}"
-        else:
-            user_context = user_text
+        session_id, _created = _resolve_session_id(user_id, request.session_id)
+        user_context, image_payload, image_message_id = await _build_user_context_and_image(
+            current,
+            user_id,
+            session_id,
+        )
+        append_message(
+            user_id,
+            session_id,
+            "user",
+            current.content,
+            image=image_payload,
+            message_id=image_message_id,
+        )
 
         chat_summary = _build_chat_summary(request.chatHistory)
 
         async def _orch_stream():
             yield ": ping\n\n"
+            yield f"event: session\ndata: {json.dumps({'session_id': session_id})}\n\n"
             chunks = 0
+            assistant_buffer = ""
+            completed = False
             try:
                 async for chunk in stream_orchestrator(
-                    request.user_id, user_context, chat_summary
+                    user_id, user_context, chat_summary
                 ):
                     chunks += 1
+                    assistant_buffer += chunk
                     yield f'data: {{"token": {json.dumps(chunk)}}}\n\n'
+                completed = True
+                if assistant_buffer:
+                    append_message(user_id, session_id, "assistant", assistant_buffer)
+                    _maybe_schedule_title(
+                        background_tasks,
+                        user_id,
+                        session_id,
+                        current.content,
+                        assistant_buffer,
+                    )
                 log.info("chat_stream_done", extra={"chunks": chunks})
+            except asyncio.CancelledError:
+                log.info("chat_stream_cancelled", extra={"session_id": session_id, "chunks": chunks})
+                raise
             except Exception as exc:
                 log.exception("chat_stream_error", extra={"error_type": type(exc).__name__})
                 traceback.print_exc()
                 payload = json.dumps(f"{type(exc).__name__}: {exc}")
                 yield f'data: {{"error": {payload}}}\n\n'
             finally:
+                if assistant_buffer and not completed:
+                    append_message(
+                        user_id,
+                        session_id,
+                        "assistant",
+                        assistant_buffer,
+                        incomplete=True,
+                    )
                 yield "data: [DONE]\n\n"
 
         return StreamingResponse(
             _orch_stream(),
             media_type="text/event-stream",
+            background=background_tasks,
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         log.exception("chat_stream_setup_error", extra={"error_type": type(e).__name__})
         traceback.print_exc()

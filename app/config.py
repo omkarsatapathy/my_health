@@ -21,8 +21,11 @@ app_config: dict = _cfg["app"]
 api_config: dict = _cfg["api"]
 llm_config: dict = _cfg["llm"]
 planning_config: dict = _cfg.get("planning", {"enabled": False})
+storage_config: dict = _cfg.get("storage", {})
 prompt_templates: dict = _prompts
 agent_goals: dict = _goals
+
+DEFAULT_USER_ID = "omkar"
 
 LLMProvider = Literal["openai", "anthropic"]
 llm_provider: LLMProvider = llm_config["provider"]
@@ -34,6 +37,9 @@ class Settings(BaseSettings):
     aws_profile: str = "personal-dev"
     aws_region: str = "ap-south-1"
     dynamodb_table: str = "My-health-DB"
+    chat_media_bucket: str = storage_config.get("chat_media_bucket", "my-health-chat-media")
+    presigned_url_ttl_seconds: int = storage_config.get("presigned_url_ttl_seconds", 900)
+    session_list_page_size: int = storage_config.get("session_list_page_size", 50)
     google_search_api_key: str = ""
     google_search_engine_id: str = ""
 

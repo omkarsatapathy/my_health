@@ -9,6 +9,7 @@
 # Usage:
 #   ./deploy.sh            # build + push + update runtime
 #   ./deploy.sh configure  # one-time: regenerate .bedrock_agentcore.yaml
+#   ./deploy.sh iam        # (re)attach inline IAM policies the runtime needs
 #   ./deploy.sh invoke '{"user_id":"u1","chatHistory":[],"currentMessage":{"role":"user","content":"hi"}}'
 
 set -euo pipefail
@@ -38,6 +39,41 @@ print(f'>>> AWS account={ident[\"Account\"]} arn={ident[\"Arn\"]}')
 " || { echo "AWS credentials check failed for profile=$AWS_PROFILE region=$AWS_REGION"; exit 1; }
 
 run_agentcore() { agentcore "$@"; }
+
+# Idempotently attach inline IAM policies the runtime needs at invoke time.
+# Reads bucket from config/config.yaml and role from .bedrock_agentcore.yaml so
+# we never hardcode names that drift from the rest of the codebase.
+ensure_runtime_iam() {
+  if [ ! -f ".bedrock_agentcore.yaml" ]; then
+    echo ">>> Skipping IAM step — .bedrock_agentcore.yaml not present yet"
+    return 0
+  fi
+  echo ">>> Ensuring runtime IAM policies (chat-media S3)"
+  uv run --frozen python -c "
+import json, sys, yaml, boto3
+cfg = yaml.safe_load(open('config/config.yaml'))
+bucket = cfg['storage']['chat_media_bucket']
+ac = yaml.safe_load(open('.bedrock_agentcore.yaml'))
+agent = ac['agents'][ac['default_agent']]
+role_arn = agent['aws']['execution_role']
+role_name = role_arn.split('/')[-1]
+policy = {
+  'Version': '2012-10-17',
+  'Statement': [
+    {'Effect': 'Allow',
+     'Action': ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'],
+     'Resource': f'arn:aws:s3:::{bucket}/*'},
+    {'Effect': 'Allow',
+     'Action': ['s3:ListBucket'],
+     'Resource': f'arn:aws:s3:::{bucket}'},
+  ],
+}
+iam = boto3.Session(profile_name='$AWS_PROFILE', region_name='$AWS_REGION').client('iam')
+iam.put_role_policy(RoleName=role_name, PolicyName='MyHealthChatMediaAccess',
+                    PolicyDocument=json.dumps(policy))
+print(f'>>> Attached MyHealthChatMediaAccess to {role_name} (bucket={bucket})')
+" || { echo "IAM step failed"; exit 1; }
+}
 
 cmd="${1:-launch}"
 
@@ -77,9 +113,16 @@ case "$cmd" in
 
     echo ">>> agentcore launch --local-build (build ARM64 locally, push ECR, register runtime)"
     run_agentcore launch --local-build "${env_args[@]}"
+
+    ensure_runtime_iam
+
     echo
     echo ">>> Deployed. Runtime details:"
     run_agentcore status
+    ;;
+
+  iam)
+    ensure_runtime_iam
     ;;
 
   status)
@@ -103,7 +146,7 @@ case "$cmd" in
 
   *)
     echo "Unknown command: $cmd"
-    echo "Usage: $0 [configure|launch|status|invoke <json>|destroy]"
+    echo "Usage: $0 [configure|launch|iam|status|invoke <json>|destroy]"
     exit 1
     ;;
 esac

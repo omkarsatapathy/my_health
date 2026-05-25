@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.agentcore import router as agentcore_router
 from app.api.routes.chat import router as chat_router
+from app.api.routes.sessions import router as sessions_router
 from app.config import api_config, app_config
 from app.observability import (
     clear_request_context,
@@ -60,6 +61,7 @@ async def request_logger(request: Request, call_next):
 
 
 app.include_router(chat_router, prefix=api_config["prefix"])
+app.include_router(sessions_router, prefix=api_config["prefix"])
 app.include_router(agentcore_router)
 
 
