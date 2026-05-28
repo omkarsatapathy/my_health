@@ -14,6 +14,7 @@ from app.agents.lifestyle.agent import LIFESTYLE_AGENT_ROLE
 from app.agents.motivation.agent import MOTIVATION_AGENT_ROLE
 from app.agents.nutrition.agent import NUTRITION_AGENT_ROLE
 from app.agents.physician.agent import PHYSICIAN_AGENT_ROLE
+from app.agents.orchestrator import nutrition_fastpath
 from app.agents.orchestrator.agent import _get_plan_block, _run_fast_path
 from app.agents.orchestrator.planning.dispatcher import execute_plan
 from app.agents.orchestrator.planning.executor import should_use_planner
@@ -130,6 +131,17 @@ def _run_fast_with_sink(loop, queue, user_id, user_context, chat_summary, intent
     with _sinks_lock:
         _sinks[tid] = sink
     try:
+        if nutrition_fastpath.can_handle(intent):
+            log.info("stream_route_fastfast", extra={"intent": intent})
+            try:
+                result = nutrition_fastpath.run(user_id, user_context)
+            except Exception:
+                log.exception("nutrition_fastpath_failed_falling_back")
+                result = None
+            if result:
+                _push(sink, result)
+                return result
+            log.info("nutrition_fastpath_fallback_to_crewai", extra={"intent": intent})
         result = _run_fast_path(user_id, user_context, chat_summary, intent)
         if not sink["emitting"]:
             log.info("stream_fast_fallback_emit", extra={"reply_len": len(result or "")})

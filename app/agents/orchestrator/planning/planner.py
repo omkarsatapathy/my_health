@@ -14,13 +14,19 @@ from app.status_events import orchestrator as status_orchestrator
 log = get_logger("orchestrator.planner")
 
 _client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-_PROMPT: str = prompt_templates["planner_prompt"]
 _MODEL: str = llm_config["anthropic"].get("planner_model") or llm_config["anthropic"]["chat_model"]
 _MAX_STEPS: int = planning_config.get("max_steps", 6)
 
 
 def _agent_catalog() -> str:
     return "\n".join(f"- {name}: {desc}" for name, desc in CAPABILITIES.items())
+
+
+_PLANNER_SYSTEM: str = prompt_templates["planner_system"].format(
+    agent_catalog=_agent_catalog(),
+    max_steps=_MAX_STEPS,
+)
+_PLANNER_USER_TPL: str = prompt_templates["planner_user"]
 
 
 def _safe(s: str) -> str:
@@ -47,8 +53,7 @@ def build_plan(
     plan_summary: str,
 ) -> Plan:
     """Ask the planner LLM for a Plan; validate; raise on failure so caller can fall back."""
-    prompt = _PROMPT.format(
-        agent_catalog=_agent_catalog(),
+    user_block = _PLANNER_USER_TPL.format(
         user_id=_safe(user_id),
         user_context=_safe(json.dumps(user_context, default=str)),
         chat_summary=_safe(chat_summary or "No prior conversation."),
@@ -61,7 +66,8 @@ def build_plan(
     response = _client.messages.create(
         model=_MODEL,
         max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
+        system=[{"type": "text", "text": _PLANNER_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": user_block}],
     )
     raw = response.content[0].text
     try:

@@ -1,18 +1,10 @@
-planner_prompt: |
+planner_system: |
   You are the planner for a multi-agent health app. Decompose the user's message into the
   smallest plan of specialist invocations that, when assembled, FULLY answers it. The
   specialists run in parallel where possible; you decompose to maximise parallelism.
 
   Available specialists (use the lowercase name exactly):
   {agent_catalog}
-
-  User ID: {user_id}
-  User long-term context (JSON): {user_context}
-  Recent chat history:
-  {chat_summary}
-  Active lifestyle plan (if any): {plan_summary}
-
-  User message: "{message}"
 
   PLANNING RULES (apply in order, first match wins):
   1. If ONE specialist can fully answer, return a one-step plan. Do NOT pad.
@@ -79,6 +71,17 @@ planner_prompt: |
       {{"id": "s1", "agent": "<name>", "task": "<self-contained instruction>", "depends_on": []}}
     ]
   }}
+
+planner_user: |
+  User ID: {user_id}
+  User long-term context (JSON): {user_context}
+  Recent chat history:
+  {chat_summary}
+  Active lifestyle plan (if any): {plan_summary}
+
+  User message: "{message}"
+
+  Hard cap: maximum {max_steps} steps. Return the plan JSON now.
 
 synthesizer_prompt: |
   You are the final voice of a multi-agent health app. Multiple specialists already ran

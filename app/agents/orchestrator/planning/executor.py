@@ -13,7 +13,13 @@ log = get_logger("orchestrator.executor")
 
 _FAST_THRESHOLD = planning_config.get("fast_path_confidence_threshold", 0.85)
 _ALWAYS_PLAN = bool(planning_config.get("always_plan", True))
-_COMPOUND_MARKERS = (" and ", " also ", " plus ", "; ", "additionally", " then ", " as well")
+_COMPOUND_MARKERS = (" also ", " plus ", "; ", "additionally", " then ", " as well")
+# Intents that map cleanly to a single specialist — never need the multi-agent planner.
+_SINGLE_DOMAIN_INTENTS = frozenset({
+    "log_food", "log_workout", "weight_entry", "log_water",
+    "consult_symptom", "first_aid", "supplement_query",
+    "intake_query", "motivation_query", "body_scan",
+})
 _HANDOFF_CUES = (
     "fitness agent", "nutrition agent", "physician agent", "consult agent",
     "intake agent", "progress agent", "dashboard agent", "motivation agent",
@@ -26,9 +32,13 @@ def should_use_planner(message: str, intent_result: dict, chat_summary: str = ""
     """Return True if the query should go through the multi-agent planner."""
     if not planning_config.get("enabled"):
         return False
+    intent = intent_result.get("intent")
+    confidence = float(intent_result.get("confidence") or 0.0)
+    # Single-domain high-confidence intents short-circuit to fast path regardless of other heuristics.
+    if intent in _SINGLE_DOMAIN_INTENTS and confidence >= _FAST_THRESHOLD:
+        return False
     if _ALWAYS_PLAN:
         return True
-    confidence = float(intent_result.get("confidence") or 0.0)
     if confidence < _FAST_THRESHOLD:
         return True
     msg = (message or "").lower()

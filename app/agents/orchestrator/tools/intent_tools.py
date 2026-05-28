@@ -17,13 +17,23 @@ INTENT_LABELS = (
 )
 
 
+def _build_classify_system() -> str:
+    """Strip the dynamic Message/has_image block; keep all static rules + examples as the system prompt."""
+    lines = _CLASSIFY_PROMPT.splitlines()
+    return "\n".join(l for l in lines if "{message}" not in l and "{has_image}" not in l).strip()
+
+
+_CLASSIFY_SYSTEM = _build_classify_system()
+
+
 def _classify_intent(message: str, has_image: bool = False) -> dict[str, Any]:
     """LLM classifies user message into one of the intent enum labels."""
-    prompt = _CLASSIFY_PROMPT.format(message=message, has_image=has_image)
+    user_block = f'Message: "{message}"\nHas image attached: {has_image}'
     response = _client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=64,
-        messages=[{"role": "user", "content": prompt}],
+        system=[{"type": "text", "text": _CLASSIFY_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": user_block}],
     )
     raw = response.content[0].text.strip()
     if raw.startswith("```"):
