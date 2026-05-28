@@ -6,6 +6,14 @@ from boto3.dynamodb.conditions import Key
 
 from app.config import settings
 from app.observability import get_logger
+from app.status_events import db as status_db
+
+_DB_LABELS = {
+    "query_sk_prefix": "Reading DB",
+    "get_item": "Reading DB",
+    "put_item": "Writing DB",
+    "update_item": "Updating DB",
+}
 
 log = get_logger("core.db")
 
@@ -31,6 +39,7 @@ def get_table():
 
 
 def _timed(op: str, sk: str, fn):
+    status_db(_DB_LABELS.get(op, "DB access"))
     t0 = time.perf_counter()
     try:
         out = fn()

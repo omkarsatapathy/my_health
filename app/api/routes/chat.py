@@ -20,6 +20,8 @@ from app.core.chat_store import (
 from app.core.s3 import upload_image_bytes
 from app.models.chat import ChatMessage, ChatRequest, ChatResponse
 from app.observability import get_logger, user_id_var
+from app.status_events import bind as bind_status, unbind as unbind_status
+from app.status_events import pipeline as status_pipeline
 from app.vision.processor import analyze_image, format_analysis_for_context
 
 router = APIRouter()
@@ -146,6 +148,11 @@ async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks) -
     """SSE endpoint — runs orchestrator (with tools) then streams the reply token-by-token."""
     user_id = _resolve_user_id(request)
     user_id_var.set(user_id)
+
+    loop = asyncio.get_running_loop()
+    status_queue: asyncio.Queue = asyncio.Queue()
+    bind_status(loop, status_queue)
+
     try:
         current = request.currentMessage
         has_image = current.image is not None
@@ -153,6 +160,7 @@ async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks) -
             "chat_stream_received",
             extra={"has_image": has_image, "history_len": len(request.chatHistory)},
         )
+        status_pipeline("Starting up")
         session_id, _created = _resolve_session_id(user_id, request.session_id)
         user_context, image_payload, image_message_id = await _build_user_context_and_image(
             current,
@@ -171,19 +179,50 @@ async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks) -
         chat_summary = _build_chat_summary(request.chatHistory)
 
         async def _orch_stream():
+            # Rebind inside the streaming task so the new task's context sees the sink.
+            bind_status(loop, status_queue)
             yield ": ping\n\n"
             yield f"event: session\ndata: {json.dumps({'session_id': session_id})}\n\n"
+
+            # Flush any status events queued during the setup phase.
+            while not status_queue.empty():
+                ev = status_queue.get_nowait()
+                yield f"event: status\ndata: {json.dumps(ev)}\n\n"
+
             chunks = 0
             assistant_buffer = ""
             completed = False
             try:
-                async for chunk in stream_orchestrator(
-                    user_id, user_context, chat_summary
-                ):
-                    chunks += 1
-                    assistant_buffer += chunk
-                    yield f'data: {{"token": {json.dumps(chunk)}}}\n\n'
-                completed = True
+                token_gen = stream_orchestrator(user_id, user_context, chat_summary).__aiter__()
+                token_task = asyncio.ensure_future(token_gen.__anext__())
+                status_task = asyncio.ensure_future(status_queue.get())
+
+                while True:
+                    done, _pending = await asyncio.wait(
+                        {token_task, status_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if status_task in done:
+                        ev = status_task.result()
+                        yield f"event: status\ndata: {json.dumps(ev)}\n\n"
+                        status_task = asyncio.ensure_future(status_queue.get())
+                    if token_task in done:
+                        try:
+                            chunk = token_task.result()
+                        except StopAsyncIteration:
+                            status_task.cancel()
+                            completed = True
+                            break
+                        chunks += 1
+                        assistant_buffer += chunk
+                        yield f'data: {{"token": {json.dumps(chunk)}}}\n\n'
+                        token_task = asyncio.ensure_future(token_gen.__anext__())
+
+                # Drain trailing status events
+                while not status_queue.empty():
+                    ev = status_queue.get_nowait()
+                    yield f"event: status\ndata: {json.dumps(ev)}\n\n"
+
                 if assistant_buffer:
                     append_message(user_id, session_id, "assistant", assistant_buffer)
                     _maybe_schedule_title(
@@ -211,6 +250,7 @@ async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks) -
                         assistant_buffer,
                         incomplete=True,
                     )
+                unbind_status()
                 yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -221,8 +261,10 @@ async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks) -
         )
 
     except HTTPException:
+        unbind_status()
         raise
     except Exception as e:
+        unbind_status()
         log.exception("chat_stream_setup_error", extra={"error_type": type(e).__name__})
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")

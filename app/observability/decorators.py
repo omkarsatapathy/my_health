@@ -5,6 +5,7 @@ import time
 from crewai.tools import tool as _crewai_tool
 
 from app.observability.config import get_logger
+from app.status_events import tool as status_tool
 
 
 def _arg_shape(args, kwargs):
@@ -24,6 +25,7 @@ def traced_tool(name: str):
         def wrapper(*args, **kwargs):
             t0 = time.perf_counter()
             log.info("tool_start", extra={"tool": name, **_arg_shape(args, kwargs)})
+            status_tool(name)
             try:
                 result = fn(*args, **kwargs)
             except Exception as e:

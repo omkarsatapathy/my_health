@@ -21,6 +21,9 @@ from app.agents.orchestrator.planning.planner import build_plan
 from app.agents.orchestrator.planning.synthesizer import SYNTHESIZER_AGENT_ROLE, synthesize
 from app.agents.orchestrator.tools.intent_tools import _classify_intent, _load_user_context
 from app.observability import get_logger
+from app.status_events import orchestrator as status_orchestrator
+from app.status_events import submit as status_submit
+from app.status_events import synthesizer as status_synth
 
 log = get_logger("orchestrator.streaming")
 
@@ -155,6 +158,7 @@ def _run_planner_with_sink(loop, queue, user_id, user_context, chat_summary, ctx
             plan_summary=plan_summary,
         )
         results = asyncio.run(execute_plan(plan, user_id))
+        status_synth("Composing reply")
         result = synthesize(user_context, results)
         if not sink["emitting"]:
             log.info("stream_planner_fallback_emit", extra={"reply_len": len(result or "")})
@@ -186,7 +190,8 @@ async def stream_orchestrator(
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
 
-    intent_result = await loop.run_in_executor(None, _classify_intent, user_context)
+    status_orchestrator("Classifying intent")
+    intent_result = await status_submit(loop, _classify_intent, user_context)
     intent = intent_result.get("intent", "unknown")
     log.info(
         "stream_intent_classified",
@@ -195,10 +200,11 @@ async def stream_orchestrator(
 
     if should_use_planner(user_context, intent_result):
         log.info("stream_route", extra={"path": "planner"})
-        ctx = await loop.run_in_executor(None, _load_user_context, user_id)
-        plan_summary, _ = await loop.run_in_executor(None, _get_plan_block, user_id)
-        fut = loop.run_in_executor(
-            None,
+        status_orchestrator("Building plan")
+        ctx = await status_submit(loop, _load_user_context, user_id)
+        plan_summary, _ = await status_submit(loop, _get_plan_block, user_id)
+        fut = status_submit(
+            loop,
             partial(
                 _run_planner_with_sink, loop, queue, user_id, user_context,
                 chat_summary, ctx, plan_summary,
@@ -206,8 +212,9 @@ async def stream_orchestrator(
         )
     else:
         log.info("stream_route", extra={"path": "fast", "intent": intent})
-        fut = loop.run_in_executor(
-            None,
+        status_orchestrator("Fast routing")
+        fut = status_submit(
+            loop,
             partial(
                 _run_fast_with_sink, loop, queue, user_id, user_context,
                 chat_summary, intent,

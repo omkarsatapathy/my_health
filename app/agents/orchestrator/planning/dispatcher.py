@@ -9,6 +9,8 @@ from app.agents.orchestrator.planning.registry import SPECIALISTS
 from app.agents.orchestrator.planning.schemas import Plan, PlanStep, StepResult
 from app.config import planning_config
 from app.observability import get_logger
+from app.status_events import agent as status_agent
+from app.status_events import submit as status_submit
 
 log = get_logger("orchestrator.dispatcher")
 
@@ -61,6 +63,7 @@ def _run_step_blocking(step: PlanStep, user_id: str, upstream: dict[str, StepRes
         expected_output="Concrete numbers or a one-line scope-deferral message.",
         agent=agent,
     )
+    status_agent(getattr(agent, "role", step.agent))
     crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
     try:
         out = str(crew.kickoff())
@@ -105,8 +108,8 @@ async def execute_plan(plan: Plan, user_id: str) -> list[StepResult]:
             log.info("step_start", extra={"step_id": step.id, "agent": step.agent})
             try:
                 res = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None, partial(_run_step_blocking, step, user_id, dict(results))
+                    status_submit(
+                        loop, partial(_run_step_blocking, step, user_id, dict(results))
                     ),
                     timeout=_STEP_TIMEOUT,
                 )

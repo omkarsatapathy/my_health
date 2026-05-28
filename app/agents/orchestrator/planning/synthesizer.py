@@ -4,6 +4,7 @@ from crewai import Agent, Crew, LLM, Process, Task
 from app.agents.orchestrator.planning.schemas import StepResult
 from app.config import llm_config, prompt_templates, settings
 from app.observability import get_logger
+from app.status_events import synthesizer as status_synth
 
 log = get_logger("orchestrator.synthesizer")
 
@@ -57,6 +58,7 @@ def synthesize(message: str, results: list[StepResult]) -> str:
         process=Process.sequential, verbose=False,
     )
     log.info("synthesizer_kickoff", extra={"n_results": len(results)})
+    status_synth("Drafting reply")
     out = str(crew.kickoff())
     log.info("synthesizer_done", extra={"reply_len": len(out or "")})
     return out

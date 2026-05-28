@@ -8,6 +8,7 @@ import anthropic
 from app.config import prompt_templates, settings
 from app.models.chat import ImagePayload
 from app.observability import get_logger
+from app.status_events import vision as status_vision
 from app.vision.schemas import ImageAnalysisResult
 
 log = get_logger("vision")
@@ -47,6 +48,7 @@ def _detect_media_type(b64_data: str, declared: str) -> str:
 
 async def analyze_image(image: ImagePayload) -> ImageAnalysisResult:
     """Send image to vision model and return structured health analysis."""
+    status_vision("Looking at image")
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     media_type = _detect_media_type(image.data, image.mediaType)
     log.info("vision_call_start", extra={"model": settings.vision_model, "media_type": media_type})
@@ -86,6 +88,7 @@ async def analyze_image(image: ImagePayload) -> ImageAnalysisResult:
 
     image_type = parsed.get("image_type", "other")
     log.info("vision_call_ok", extra={"image_type": image_type, "duration_ms": dt})
+    status_vision("Image parsed")
 
     result = ImageAnalysisResult(
         image_type=image_type,

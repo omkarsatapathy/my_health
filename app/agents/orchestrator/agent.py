@@ -7,6 +7,7 @@ from crewai import Agent, Crew, LLM, Process, Task
 from app.config import agent_goals, llm_config, planning_config, settings
 from app.core.db import get_item
 from app.observability import get_logger, user_id_var
+from app.status_events import agent as status_agent
 
 log = get_logger("orchestrator")
 from app.agents.nutrition.agent import nutrition_agent
@@ -212,6 +213,7 @@ def _run_fast_path(
         "specialist_selected",
         extra={"intent": intent, "agent_role": getattr(specialist, "role", "?")},
     )
+    status_agent(getattr(specialist, "role", "Specialist"))
 
     safe_chat_summary = chat_summary.replace("{", "{{").replace("}", "}}")
     safe_user_context = user_context.replace("{", "{{").replace("}", "}}")

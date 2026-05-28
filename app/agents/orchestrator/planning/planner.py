@@ -9,6 +9,7 @@ from app.agents.orchestrator.planning.registry import CAPABILITIES
 from app.agents.orchestrator.planning.schemas import Plan
 from app.config import llm_config, planning_config, prompt_templates, settings
 from app.observability import get_logger
+from app.status_events import orchestrator as status_orchestrator
 
 log = get_logger("orchestrator.planner")
 
@@ -56,6 +57,7 @@ def build_plan(
         max_steps=_MAX_STEPS,
     )
     log.info("planner_kickoff", extra={"model": _MODEL, "msg_len": len(message)})
+    status_orchestrator("Planning steps")
     response = _client.messages.create(
         model=_MODEL,
         max_tokens=1024,
@@ -81,4 +83,5 @@ def build_plan(
             "has_deps": any(s.depends_on for s in plan.steps),
         },
     )
+    status_orchestrator(f"{len(plan.steps)}-step plan")
     return plan
