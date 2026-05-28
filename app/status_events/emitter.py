@@ -8,6 +8,10 @@ from typing import Any
 
 log = logging.getLogger("status_events")
 
+# === TEMP PERF TRACE — DELETE BEFORE DEPLOY ===
+from app.status_events import _perf_trace
+# === END TEMP PERF TRACE ===
+
 # Per-task binding (asyncio + run_in_executor inherit this via copy_context).
 _emitter_var: ContextVar[dict | None] = ContextVar("status_emitter", default=None)
 
@@ -49,6 +53,7 @@ def submit(loop: asyncio.AbstractEventLoop, func, *args):
 
 
 def _push(payload: dict[str, Any]) -> None:
+    _perf_trace.record(payload)  # TEMP PERF TRACE — DELETE BEFORE DEPLOY
     em = _current()
     if em is None:
         return
