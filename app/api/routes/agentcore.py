@@ -20,6 +20,8 @@ from app.core.chat_store import (
 from app.core.s3 import upload_image_bytes
 from app.models.chat import ChatMessage, ChatRequest
 from app.observability import get_logger, user_id_var
+from app.status_events import bind as bind_status, unbind as unbind_status
+from app.status_events import pipeline as status_pipeline
 from app.vision.processor import analyze_image, format_analysis_for_context
 
 router = APIRouter()
@@ -98,6 +100,11 @@ async def ping():
 async def invocations(request: ChatRequest):
     user_id = _resolve_user_id(request)
     user_id_var.set(user_id)
+
+    loop = asyncio.get_running_loop()
+    status_queue: asyncio.Queue = asyncio.Queue()
+    bind_status(loop, status_queue)
+
     try:
         current = request.currentMessage
         has_image = current.image is not None
@@ -109,6 +116,7 @@ async def invocations(request: ChatRequest):
                 "msg_len": len(current.content or ""),
             },
         )
+        status_pipeline("Starting up")
 
         session_id = _resolve_session_id(user_id, request.session_id)
         user_context, image_payload, image_message_id = await _build_user_context_and_image(
@@ -127,17 +135,36 @@ async def invocations(request: ChatRequest):
         chat_summary = _build_chat_summary(request.chatHistory)
 
         async def gen():
+            # Rebind inside the streaming task so this task's context sees the status sink.
+            bind_status(loop, status_queue)
+
             yield ": ping\n\n"
             yield f"event: session\ndata: {json.dumps({'session_id': session_id})}\n\n"
+
+            # Flush status events queued during the setup phase (vision, "Starting up", etc.)
+            while not status_queue.empty():
+                ev = status_queue.get_nowait()
+                yield f"event: status\ndata: {json.dumps(ev)}\n\n"
+
             chunks = 0
             assistant_buffer = ""
             completed = False
             try:
                 async for chunk in stream_orchestrator(user_id, user_context, chat_summary):
+                    # Flush any status events that landed since the last yield.
+                    # All orchestrator status events arrive before the first token, so
+                    # they appear in a burst right before text starts streaming.
+                    while not status_queue.empty():
+                        ev = status_queue.get_nowait()
+                        yield f"event: status\ndata: {json.dumps(ev)}\n\n"
                     chunks += 1
                     assistant_buffer += chunk
                     yield f'data: {{"token": {json.dumps(chunk)}}}\n\n'
                 completed = True
+                # Final drain (tool/db events that landed after the last token)
+                while not status_queue.empty():
+                    ev = status_queue.get_nowait()
+                    yield f"event: status\ndata: {json.dumps(ev)}\n\n"
                 if assistant_buffer:
                     append_message(user_id, session_id, "assistant", assistant_buffer)
                     _maybe_schedule_title(user_id, session_id, current.content, assistant_buffer)
@@ -159,6 +186,7 @@ async def invocations(request: ChatRequest):
                         assistant_buffer,
                         incomplete=True,
                     )
+                unbind_status()
                 yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -167,8 +195,10 @@ async def invocations(request: ChatRequest):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     except HTTPException:
+        unbind_status()
         raise
     except Exception as exc:
+        unbind_status()
         log.exception("invocations_setup_error", extra={"error_type": type(exc).__name__})
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
