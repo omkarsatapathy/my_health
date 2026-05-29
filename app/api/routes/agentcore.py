@@ -150,16 +150,35 @@ async def invocations(request: ChatRequest):
             assistant_buffer = ""
             completed = False
             try:
-                async for chunk in stream_orchestrator(user_id, user_context, chat_summary):
-                    # Flush any status events that landed since the last yield.
-                    # All orchestrator status events arrive before the first token, so
-                    # they appear in a burst right before text starts streaming.
-                    while not status_queue.empty():
-                        ev = status_queue.get_nowait()
+                # Race the next chunk against the next status event so statuses
+                # reach the client in real time, not buffered until the first token.
+                # Otherwise "Classifying intent / Loading meals / …" pile up while
+                # the orchestrator is thinking and only flush in a burst right
+                # before tokens — making the last setup status (e.g. "Saving chat")
+                # appear to hang on screen during the entire wait.
+                chunks_iter = stream_orchestrator(user_id, user_context, chat_summary).__aiter__()
+                chunk_task: asyncio.Task | None = asyncio.create_task(chunks_iter.__anext__())
+                status_task: asyncio.Task | None = asyncio.create_task(status_queue.get())
+                while chunk_task is not None:
+                    done, _ = await asyncio.wait(
+                        {chunk_task, status_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if status_task in done:
+                        ev = status_task.result()
                         yield f"event: status\ndata: {json.dumps(ev)}\n\n"
-                    chunks += 1
-                    assistant_buffer += chunk
-                    yield f'data: {{"token": {json.dumps(chunk)}}}\n\n'
+                        status_task = asyncio.create_task(status_queue.get())
+                    if chunk_task in done:
+                        try:
+                            chunk = chunk_task.result()
+                        except StopAsyncIteration:
+                            chunk_task = None
+                            break
+                        chunks += 1
+                        assistant_buffer += chunk
+                        yield f'data: {{"token": {json.dumps(chunk)}}}\n\n'
+                        chunk_task = asyncio.create_task(chunks_iter.__anext__())
+                status_task.cancel()
                 completed = True
                 # Final drain (tool/db events that landed after the last token)
                 while not status_queue.empty():

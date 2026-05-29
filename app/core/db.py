@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 
 import boto3
@@ -8,12 +9,69 @@ from app.config import settings
 from app.observability import get_logger
 from app.status_events import db as status_db
 
-_DB_LABELS = {
-    "query_sk_prefix": "Reading DB",
-    "get_item": "Reading DB",
-    "put_item": "Writing DB",
-    "update_item": "Updating DB",
+# Friendly noun for each SK prefix. Keep these short — the iOS status pill truncates
+# at 48 chars but visually anything past ~28 wraps awkwardly.
+_SK_NOUNS = {
+    "MEAL":      "meals",
+    "WORKOUT":   "workouts",
+    "WATER":     "hydration",
+    "WEIGHT":    "weight",
+    "INTAKE":    "nutrition",
+    "LIFESTYLE": "lifestyle",
+    "PROFILE":   "profile",
+    "MEMORY":    "memory",
+    "STREAK":    "streak",
+    "CHALLENGE": "challenge",
+    "PLAN":      "plan",
+    "HISTORY":   "history",
+    "GOAL":      "goal",
+    "STATE":     "state",
 }
+
+# Prefixes that are pure persistence plumbing — we don't surface them to the user.
+# Chat header/message writes happen on every turn but say nothing about what the
+# assistant is *thinking*; they only add noise to the status pill.
+_SILENT_PREFIXES = frozenset({"CHATHDR", "CHATMSG"})
+
+# Per-op verb. `query_sk_prefix` is plural-ish ("Loading"), `get_item` is singular
+# ("Reading"). Writes/updates are uniform.
+_OP_VERBS = {
+    "query_sk_prefix": "Loading",
+    "get_item":        "Reading",
+    "put_item":        "Saving",
+    "update_item":     "Updating",
+}
+
+
+def _label_for(op: str, sk: str) -> str | None:
+    """Build a human label like 'Saving meal' from the SK prefix + op.
+
+    Returns None for silent prefixes (chat plumbing) — caller should skip emission.
+    """
+    prefix = (sk or "").split("#", 1)[0].upper()
+    if prefix in _SILENT_PREFIXES:
+        return None
+    noun = _SK_NOUNS.get(prefix)
+    verb = _OP_VERBS.get(op, "Accessing")
+    if noun:
+        return f"{verb} {noun}"
+    return f"{verb} data"
+
+
+# Per-thread last-emitted label so consecutive identical DB pings collapse into
+# one status update instead of spamming the pill (e.g. five MEAL reads in a row).
+_last_label: dict[int, str] = {}
+_last_label_lock = threading.Lock()
+
+
+def _emit_dedup(label: str) -> None:
+    tid = threading.get_ident()
+    with _last_label_lock:
+        prev = _last_label.get(tid)
+        if prev == label:
+            return
+        _last_label[tid] = label
+    status_db(label)
 
 log = get_logger("core.db")
 
@@ -39,7 +97,9 @@ def get_table():
 
 
 def _timed(op: str, sk: str, fn):
-    status_db(_DB_LABELS.get(op, "DB access"))
+    label = _label_for(op, sk)
+    if label is not None:
+        _emit_dedup(label)
     t0 = time.perf_counter()
     try:
         out = fn()
